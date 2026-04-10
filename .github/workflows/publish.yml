@@ -26,7 +26,7 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Build and verify
-        run: mvn --batch-mode clean verify
+        run: mvn --batch-mode clean verify -Dgpg.passphrase="${{ secrets.MAVEN_GPG_PASSPHRASE }}"
 
       - name: Publish to Maven Central
         run: mvn --batch-mode deploy -DskipTests -Dgpg.passphrase="${{ secrets.MAVEN_GPG_PASSPHRASE }}"
