@@ -52,6 +52,12 @@
     </dependency>
   </dependencies>
 
+  <scm>
+    <connection>scm:git:git://github.com/kloakd-dev/kloakd-sdk-java.git</connection>
+    <developerConnection>scm:git:ssh://github.com/kloakd-dev/kloakd-sdk-java.git</developerConnection>
+    <url>https://github.com/kloakd-dev/kloakd-sdk-java</url>
+  </scm>
+
   <distributionManagement>
     <repository>
       <id>central</id>
