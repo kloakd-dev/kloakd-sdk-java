@@ -58,6 +58,22 @@
     <url>https://github.com/kloakd-dev/kloakd-sdk-java</url>
   </scm>
 
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>KLOAKD</name>
+      <email>dev@kloakd.dev</email>
+      <organization>KLOAKD</organization>
+      <organizationUrl>https://kloakd.dev</organizationUrl>
+    </developer>
+  </developers>
+
   <distributionManagement>
     <repository>
       <id>central</id>
