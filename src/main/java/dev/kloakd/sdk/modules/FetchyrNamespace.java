@@ -9,7 +9,7 @@ import java.util.Map;
 
 import static dev.kloakd.sdk.modules.EvadrNamespace.*;
 
-/** RPA & Authentication module. Access via {@code client.fetchyr()}. */
+/** RPA and Authentication module. Access via {@code client.fetchyr()}. */
 public final class FetchyrNamespace {
 
     private final HttpTransport t;

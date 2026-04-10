@@ -8,7 +8,7 @@ import java.util.stream.Stream;
 
 import static dev.kloakd.sdk.modules.EvadrNamespace.*;
 
-/** Site Mapping & Discovery module. Access via {@code client.webgrph()}. */
+/** Site Mapping and Discovery module. Access via {@code client.webgrph()}. */
 public final class WebgrphNamespace {
 
     private final HttpTransport t;
