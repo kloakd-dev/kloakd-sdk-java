@@ -92,14 +92,72 @@ public final class FetchyrNamespace {
                 Map.of("challenge_id", challengeId, "code", code)));
     }
 
+    // ── Credentials ──────────────────────────────────────────────────────────
+
+    public Map<String, Object> storeCredentials(String name, Map<String, Object> credentials) {
+        var body = new HashMap<>(credentials);
+        body.put("name", name);
+        return t.post("fetchyr/account/credentials", body);
+    }
+
+    public Map<String, Object> listCredentials() { return t.get("fetchyr/account/credentials", null); }
+
+    public void deleteCredentials(String name) { t.delete("fetchyr/account/credentials/" + name); }
+
+    // ── Session management ───────────────────────────────────────────────────
+
+    public Map<String, Object> listSessions() { return t.get("fetchyr/sessions", null); }
+
+    public void terminateSession(String artifactId) { t.delete("fetchyr/sessions/" + artifactId); }
+
+    // ── Form filling ─────────────────────────────────────────────────────────
+
+    public Map<String, Object> fillForm(String url, Map<String, String> formData, String sessionArtifactId, boolean submit) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        body.put("form_data", formData);
+        body.put("submit", submit);
+        if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
+        return t.post("fetchyr/form/fill", body);
+    }
+
+    // ── MFA queue and statistics ─────────────────────────────────────────────
+
+    public Map<String, Object> listMfaChallenges() { return t.get("fetchyr/mfa-queue", null); }
+    public Map<String, Object> getMfaChallenge(String challengeId) { return t.get("fetchyr/mfa/challenges/" + challengeId, null); }
+    public Map<String, Object> getMfaStatistics(String domain) { return t.get("fetchyr/mfa/statistics/" + domain, null); }
+
+    // ── Workflow CRUD ────────────────────────────────────────────────────────
+
+    public Map<String, Object> listWorkflows() { return t.get("fetchyr/workflows", null); }
+    public Map<String, Object> getWorkflow(String workflowId) { return t.get("fetchyr/workflows/" + workflowId, null); }
+    public Map<String, Object> updateWorkflow(String workflowId, Map<String, Object> updates) { return t.patch("fetchyr/workflows/" + workflowId, updates); }
+    public void deleteWorkflow(String workflowId) { t.delete("fetchyr/workflows/" + workflowId); }
+    public Map<String, Object> getWorkflowStatistics(String workflowId) { return t.get("fetchyr/workflows/" + workflowId + "/statistics", null); }
+
+    // ── Multi-site ───────────────────────────────────────────────────────────
+
+    public Map<String, Object> createMultiSiteWorkflow(List<Map<String, Object>> sites, String name) {
+        var body = new HashMap<String, Object>();
+        body.put("sites", sites);
+        if (name != null) body.put("name", name);
+        return t.post("fetchyr/multi-site-workflows", body);
+    }
+
     // ── Deduplication ─────────────────────────────────────────────────────────
 
     public DeduplicationResult checkDuplicates(List<Map<String, Object>> records, String domain) {
         var body = new HashMap<String, Object>();
         body.put("records", records);
         if (domain != null) body.put("domain", domain);
-        return parseDeduplicationResult(t.post("fetchyr/duplicates/check", body));
+        return parseDeduplicationResult(t.post("fetchyr/deduplication/check", body));
     }
+
+    public Map<String, Object> createDedupSession(Map<String, Object> config) { return t.post("fetchyr/deduplication/sessions", config); }
+    public Map<String, Object> listDedupSessions() { return t.get("fetchyr/deduplication/sessions/active", null); }
+    public Map<String, Object> getDedupSession(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + sessionId, null); }
+    public Map<String, Object> getDedupSessionStatistics(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + sessionId + "/statistics", null); }
+    public Map<String, Object> getDedupDomainStatistics(String domain) { return t.get("fetchyr/deduplication/statistics/" + domain, null); }
 
     // ── parsers ───────────────────────────────────────────────────────────────
 

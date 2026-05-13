@@ -71,11 +71,47 @@ public final class EvadrNamespace {
         return parseAnalyzeResult(t.post("evadr/analyze", body));
     }
 
-    // ── StoreProxy ────────────────────────────────────────────────────────────
+    // ── Scan ──────────────────────────────────────────────────────────────────
+
+    public Map<String, Object> scan(String url) {
+        return scan(url, 0, null, null);
+    }
+
+    public Map<String, Object> scan(String url, int statusCode,
+            Map<String, String> headers, String bodySnippet) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        if (statusCode > 0) body.put("status_code", statusCode);
+        if (headers != null && !headers.isEmpty()) body.put("headers", headers);
+        if (bodySnippet != null) body.put("body_snippet", bodySnippet);
+        return t.post("evadr/scan", body);
+    }
+
+    // ── Job polling ──────────────────────────────────────────────────────────
+
+    public Map<String, Object> getJob(String jobId) {
+        return t.get("evadr/jobs/" + jobId, null);
+    }
+
+    public Map<String, Object> getJobEvents(String jobId) {
+        return t.get("evadr/jobs/" + jobId + "/events", null);
+    }
+
+    // ── Vendors and profiles ─────────────────────────────────────────────────
+
+    public Map<String, Object> listVendors() { return t.get("evadr/vendors", null); }
+
+    public Map<String, Object> listProfiles() { return t.get("evadr/profiles", null); }
+
+    // ── Proxy management ─────────────────────────────────────────────────────
+
+    public Map<String, Object> listProxies() { return t.get("evadr/proxies", null); }
 
     public void storeProxy(String name, String proxyUrl) {
         t.post("evadr/proxies", Map.of("name", name, "proxy_url", proxyUrl));
     }
+
+    public void deleteProxy(String name) { t.delete("evadr/proxies/" + name); }
 
     // ── parsers ───────────────────────────────────────────────────────────────
 

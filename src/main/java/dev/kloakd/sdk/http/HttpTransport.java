@@ -36,7 +36,7 @@ import java.util.stream.StreamSupport;
  */
 public class HttpTransport {
 
-    static final String SDK_VERSION = "0.1.0";
+    static final String SDK_VERSION = "0.2.0";
     private static final Set<Integer> RETRYABLE = Set.of(429, 500, 502, 503, 504);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -154,6 +154,14 @@ public class HttpTransport {
 
     public Map<String, Object> post(String path, Map<String, Object> body) {
         return request("POST", path, body, null);
+    }
+
+    public Map<String, Object> put(String path, Map<String, Object> body) {
+        return request("PUT", path, body, null);
+    }
+
+    public Map<String, Object> patch(String path, Map<String, Object> body) {
+        return request("PATCH", path, body, null);
     }
 
     public void delete(String path) {

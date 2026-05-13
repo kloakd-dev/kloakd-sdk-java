@@ -53,6 +53,32 @@ public final class NexusNamespace {
                 Map.of("execution_result_id", executionResultId)));
     }
 
+    // ── Reason ───────────────────────────────────────────────────────────────
+
+    public Map<String, Object> reason(Map<String, Object> context) { return t.post("nexus/reason", context); }
+
+    // ── Recommendations ──────────────────────────────────────────────────────
+
+    public Map<String, Object> recommendAnalyze(Map<String, Object> data) { return t.post("nexus/recommendations/analyze", data); }
+    public Map<String, Object> listRecommendationApplications() { return t.get("nexus/recommendations/applications", null); }
+
+    public Map<String, Object> getCacheStatistics() { return t.get("nexus/recommendations/cache/statistics", null); }
+    public Map<String, Object> cleanupCache() { return t.post("nexus/recommendations/cache/cleanup", Map.of()); }
+    public Map<String, Object> invalidateCache() { return t.post("nexus/recommendations/cache/invalidate", Map.of()); }
+
+    public Map<String, Object> getHooksStatus() { return t.get("nexus/recommendations/hooks/status", null); }
+    public Map<String, Object> enableHook(String hookName) { return t.post("nexus/recommendations/hooks/" + hookName + "/enable", Map.of()); }
+    public Map<String, Object> disableHook(String hookName) { return t.post("nexus/recommendations/hooks/" + hookName + "/disable", Map.of()); }
+
+    public Map<String, Object> createPreference(Map<String, Object> preference) { return t.post("nexus/recommendations/preferences", preference); }
+    public Map<String, Object> getPreferences(String userId) { return t.get("nexus/recommendations/preferences/" + userId, null); }
+    public Map<String, Object> updatePreference(String preferenceId, Map<String, Object> data) { return t.put("nexus/recommendations/preferences/" + preferenceId, data); }
+    public void deletePreference(String preferenceId) { t.delete("nexus/recommendations/preferences/" + preferenceId); }
+
+    public Map<String, Object> getRecommendationStatistics() { return t.get("nexus/recommendations/statistics", null); }
+
+    // ── parsers ──────────────────────────────────────────────────────────────
+
     static NexusAnalyzeResult parseNexusAnalyzeResult(Map<String, Object> m) {
         return new NexusAnalyzeResult(str(m, "perception_id"), mapField(m, "strategy"),
                 str(m, "page_type"), str(m, "complexity_level"),

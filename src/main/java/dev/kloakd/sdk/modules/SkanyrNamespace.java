@@ -56,6 +56,40 @@ public final class SkanyrNamespace {
                 .map(SkanyrNamespace::parseDiscoverEvent);
     }
 
+    // ── Discovery polling ──────────────────────────────────────────────────────
+
+    public Map<String, Object> getDiscovery(String discoveryId) { return t.get("skanyr/discover/" + discoveryId, null); }
+    public Map<String, Object> getDiscoveryEvents(String discoveryId) { return t.get("skanyr/discover/" + discoveryId + "/events", null); }
+
+    // ── Analysis and detection ───────────────────────────────────────────────
+
+    public Map<String, Object> analyzeBundle(String url) { return t.post("skanyr/analyze-bundle", Map.of("url", url)); }
+    public Map<String, Object> discoverPageLive(String url) { return t.post("skanyr/discover-page/live", Map.of("url", url)); }
+    public Map<String, Object> detectedApis(String pageUrl) { return t.get("skanyr/detected-apis", Map.of("page_url", pageUrl)); }
+    public Map<String, Object> hierarchy(String url) { return t.post("skanyr/hierarchy", Map.of("url", url)); }
+    public Map<String, Object> expandNode(String nodeId) { return t.post("skanyr/expand-node", Map.of("node_id", nodeId)); }
+    public Map<String, Object> readerView(String url) { return t.post("skanyr/reader-view", Map.of("url", url)); }
+
+    public Map<String, Object> retry(String discoveryId, Map<String, Object> overrides) {
+        var body = new HashMap<String, Object>();
+        body.put("discovery_id", discoveryId);
+        if (overrides != null) body.putAll(overrides);
+        return t.post("skanyr/retry", body);
+    }
+
+    public Map<String, Object> health() { return t.get("skanyr/health", null); }
+
+    // ── Session management ───────────────────────────────────────────────────
+
+    public Map<String, Object> listSessions() { return t.get("skanyr/sessions", null); }
+    public Map<String, Object> saveSession(Map<String, Object> config) { return t.post("skanyr/sessions", config); }
+    public Map<String, Object> getSession(String sessionId) { return t.get("skanyr/sessions/" + sessionId, null); }
+    public void deleteSession(String sessionId) { t.delete("skanyr/sessions/" + sessionId); }
+    public Map<String, Object> endSession(String sessionId) { return t.post("skanyr/sessions/" + sessionId + "/end", Map.of()); }
+    public Map<String, Object> updateSessionJob(String sessionId, String jobId) { return t.patch("skanyr/sessions/" + sessionId + "/job", Map.of("job_id", jobId)); }
+
+    // ── Artifacts ────────────────────────────────────────────────────────────
+
     public Map<String, Object> getApiMap(String artifactId) {
         return t.get("skanyr/api-map/" + artifactId, null);
     }

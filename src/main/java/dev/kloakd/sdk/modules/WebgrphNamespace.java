@@ -59,6 +59,12 @@ public final class WebgrphNamespace {
                 .map(WebgrphNamespace::parseCrawlEvent);
     }
 
+    // ── Crawl polling ─────────────────────────────────────────────────────────
+
+    public Map<String, Object> getCrawlStatus(String crawlId) { return t.get("webgrph/crawl/" + crawlId, null); }
+    public Map<String, Object> getCrawlEvents(String crawlId) { return t.get("webgrph/crawl/" + crawlId + "/events", null); }
+    public Map<String, Object> getCrawlPages(String crawlId) { return t.get("webgrph/crawl/" + crawlId + "/pages", null); }
+
     public Map<String, Object> getHierarchy(String artifactId) {
         return t.get("webgrph/hierarchy/" + artifactId, null);
     }
@@ -66,6 +72,16 @@ public final class WebgrphNamespace {
     public Map<String, Object> getJob(String jobId) {
         return t.get("webgrph/jobs/" + jobId, null);
     }
+
+    // ── Analytics ────────────────────────────────────────────────────────────
+
+    public Map<String, Object> getDashboardSummary() { return t.get("webgrph/analytics/dashboard/summary", null); }
+    public Map<String, Object> getErrorSummary() { return t.get("webgrph/analytics/error-summary", null); }
+    public Map<String, Object> getJobTrends() { return t.get("webgrph/analytics/job-trends", null); }
+    public Map<String, Object> getDiscoveryPatterns() { return t.get("webgrph/analytics/content/discovery-patterns", null); }
+    public Map<String, Object> getEfficiencyMetrics() { return t.get("webgrph/analytics/scraping/efficiency-metrics", null); }
+    public Map<String, Object> getSiteMappingTrends() { return t.get("webgrph/analytics/site-maps/trends", null); }
+    public Map<String, Object> getUserBehaviorInsights() { return t.get("webgrph/analytics/users/behavior-insights", null); }
 
     static CrawlResult parseCrawlResult(Map<String, Object> m) {
         var pages = new ArrayList<PageNode>();
