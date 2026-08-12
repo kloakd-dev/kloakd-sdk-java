@@ -108,6 +108,6 @@ public final class KolektrNamespace {
                 bool(m, "success"), str(m, "url"), str(m, "method"),
                 mapList(m, "records"), integer(m, "total_records"),
                 integer(m, "pages_scraped"), bool(m, "has_more"), integer(m, "total"),
-                str(m, "artifact_id"), str(m, "job_id"), str(m, "error"));
+                nestedArtifactId(m), str(m, "job_id"), str(m, "error"));
     }
 }

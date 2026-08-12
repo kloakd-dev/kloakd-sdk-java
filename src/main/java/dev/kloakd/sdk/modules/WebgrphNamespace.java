@@ -100,7 +100,7 @@ public final class WebgrphNamespace {
                 integer(m, "total_pages"), integer(m, "max_depth_reached"),
                 Collections.unmodifiableList(pages),
                 bool(m, "has_more"), integer(m, "total"),
-                str(m, "artifact_id"), str(m, "error"));
+                nestedArtifactId(m), str(m, "error"));
     }
 
     static PageNode parsePageNode(Map<String, Object> m) {

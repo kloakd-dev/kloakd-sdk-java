@@ -120,7 +120,7 @@ public final class EvadrNamespace {
         return new FetchResult(
                 bool(m, "success"), str(m, "url"), integer(m, "status_code"),
                 integer(m, "tier_used"), str(m, "html"), str(m, "vendor_detected"),
-                bool(m, "anti_bot_bypassed"), str(m, "artifact_id"), str(m, "error"));
+                bool(m, "anti_bot_bypassed"), nestedArtifactId(m), str(m, "error"));
     }
 
     @SuppressWarnings("unchecked")
@@ -135,6 +135,15 @@ public final class EvadrNamespace {
     }
 
     // ── field helpers (shared across namespace classes via package-private) ───
+
+    static String nestedArtifactId(Map<String, Object> m) {
+        var artifact = m.get("artifact");
+        if (artifact instanceof Map<?,?> mp) {
+            var id = mp.get("artifact_id");
+            if (id instanceof String s) return s;
+        }
+        return str(m, "artifact_id");
+    }
 
     static String str(Map<String, Object> m, String key) {
         var v = m.get(key);
