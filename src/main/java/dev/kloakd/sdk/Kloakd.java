@@ -2,9 +2,12 @@ package dev.kloakd.sdk;
 
 import dev.kloakd.sdk.http.HttpTransport;
 import dev.kloakd.sdk.modules.*;
+import dev.kloakd.sdk.models.*;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * KLOAKD Java SDK client.
@@ -59,6 +62,163 @@ public final class Kloakd {
     public ParlyrNamespace parlyr() { return parlyr; }
     public FetchyrNamespace fetchyr() { return fetchyr; }
     public KolektrNamespace kolektr() { return kolektr; }
+
+    // ── High-level orchestrator ──────────────────────────────────────────────
+
+    /**
+     * High-level orchestrator: discovers, fetches, and optionally extracts
+     * structured data from all pages on a site in a single call.
+     *
+     * <pre>{@code
+     * SiteCrawlResult result = client.crawl("https://example.com",
+     *     CrawlOptions.builder()
+     *         .maxPages(50)
+     *         .extractSchema(Map.of("title", "css:h1"))
+     *         .build());
+     * }</pre>
+     */
+    public SiteCrawlResult crawl(String url, CrawlOptions opts) {
+        int maxDepth = opts.maxDepth() > 0 ? opts.maxDepth() : 3;
+        int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
+
+        var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
+                opts.includeExternalLinks(), opts.sessionArtifactId(), 0, 0);
+
+        var pages = new ArrayList<CrawlPage>();
+        int fetched = 0;
+        int failed = 0;
+
+        for (var node : crawlResult.pages()) {
+            try {
+                var fetchResult = evadr.fetch(node.url(),
+                        false, false, opts.sessionArtifactId());
+
+                Map<String, Object> structuredData = null;
+                if (opts.extractSchema() != null && !opts.extractSchema().isEmpty()
+                        && fetchResult.success()) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
+                        var extraction = kolektr.page(node.url(), schema,
+                                fetchResult.artifactId(), null, null, 0, 0);
+                        if (!extraction.records().isEmpty()) {
+                            structuredData = extraction.records().get(0);
+                        }
+                    } catch (Exception ignored) {
+                        // Extraction failure is non-fatal
+                    }
+                }
+
+                var page = new CrawlPage(
+                        fetchResult.success(),
+                        fetchResult.url(),
+                        fetchResult.statusCode(),
+                        fetchResult.tierUsed(),
+                        fetchResult.html(),
+                        structuredData,
+                        fetchResult.artifactId(),
+                        fetchResult.error()
+                );
+                pages.add(page);
+                if (page.ok()) fetched++; else failed++;
+            } catch (Exception e) {
+                pages.add(new CrawlPage(false, node.url(), 0, 0, null, null, null, e.getMessage()));
+                failed++;
+            }
+        }
+
+        return new SiteCrawlResult(
+                true, url, crawlResult.totalPages(),
+                fetched, failed, Collections.unmodifiableList(pages),
+                crawlResult.artifactId(), null
+        );
+    }
+
+    /**
+     * Streaming version of {@link #crawl(String, CrawlOptions)}. Returns a
+     * stream of {@link CrawlProgressEvent} values as pages are processed.
+     */
+    public Stream<CrawlProgressEvent> crawlStream(String url, CrawlOptions opts) {
+        int maxDepth = opts.maxDepth() > 0 ? opts.maxDepth() : 3;
+        int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
+
+        var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
+                opts.includeExternalLinks(), opts.sessionArtifactId(), 0, 0);
+
+        int total = crawlResult.totalPages();
+        var events = new ArrayList<CrawlProgressEvent>();
+
+        events.add(new CrawlProgressEvent("discovery_complete", url, null, total, null, null,
+                Map.of("pages_found", total)));
+
+        int fetched = 0;
+        int failed = 0;
+        var pages = new ArrayList<CrawlPage>();
+
+        for (int i = 0; i < crawlResult.pages().size(); i++) {
+            var node = crawlResult.pages().get(i);
+            int pageNum = i + 1;
+
+            events.add(new CrawlProgressEvent("page_fetching", node.url(), pageNum, total, null, null, Map.of()));
+
+            try {
+                var fetchResult = evadr.fetch(node.url(),
+                        false, false, opts.sessionArtifactId());
+
+                Map<String, Object> structuredData = null;
+                if (opts.extractSchema() != null && !opts.extractSchema().isEmpty()
+                        && fetchResult.success()) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
+                        var extraction = kolektr.page(node.url(), schema,
+                                fetchResult.artifactId(), null, null, 0, 0);
+                        if (!extraction.records().isEmpty()) {
+                            structuredData = extraction.records().get(0);
+                        }
+                    } catch (Exception ignored) {
+                        // Extraction failure is non-fatal
+                    }
+                }
+
+                var page = new CrawlPage(
+                        fetchResult.success(),
+                        fetchResult.url(),
+                        fetchResult.statusCode(),
+                        fetchResult.tierUsed(),
+                        fetchResult.html(),
+                        structuredData,
+                        fetchResult.artifactId(),
+                        fetchResult.error()
+                );
+                pages.add(page);
+
+                if (page.ok()) {
+                    fetched++;
+                    events.add(new CrawlProgressEvent("page_fetched", node.url(), pageNum, total,
+                            true, null, Map.of("tier_used", fetchResult.tierUsed())));
+                } else {
+                    failed++;
+                    events.add(new CrawlProgressEvent("page_failed", node.url(), pageNum, total,
+                            false, fetchResult.error(), Map.of()));
+                }
+            } catch (Exception e) {
+                pages.add(new CrawlPage(false, node.url(), 0, 0, null, null, null, e.getMessage()));
+                failed++;
+                events.add(new CrawlProgressEvent("page_failed", node.url(), pageNum, total,
+                        false, e.getMessage(), Map.of()));
+            }
+        }
+
+        var result = new SiteCrawlResult(
+                true, url, total, fetched, failed,
+                Collections.unmodifiableList(pages), crawlResult.artifactId(), null
+        );
+        events.add(new CrawlProgressEvent("crawl_complete", url, null, total, true, null,
+                Map.of("result", result)));
+
+        return events.stream();
+    }
 
     public static Builder builder() { return new Builder(); }
 
