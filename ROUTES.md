@@ -1,4 +1,27 @@
-# Routes called by the Java SDK, 0.2.0 → 0.3.0
+# Routes called by the Java SDK
+
+## 0.3.0 → 0.4.0
+
+Checked against kobe-scraper's routers (`src/kobe_scraper/modules/*/router.py`, `kernel/sync_handoff.py`); `src/test/resources/routes.tsv` updated to match and `LiveRoutesTest` keeps the SDK to it.
+
+| Call | 0.4.0 |
+|---|---|
+| `POST kolektr/extract` | follows a 202 hand-off (`@hands_off_after_limit("kolektr.extract")`) |
+| `POST fetchyr/authenticate` | follows a 202 hand-off |
+| `POST fetchyr/form/detect` | follows a 202 hand-off |
+| `POST fetchyr/form/fill` | follows a 202 hand-off |
+| `POST fetchyr/mfa/detect` | follows a 202 hand-off |
+| `POST nexus/analyze` | follows a 202 hand-off |
+| `POST nexus/synthesize` | follows a 202 hand-off |
+| `POST nexus/execute` | follows a 202 hand-off; reads `execution_result_id` |
+| `POST evadr/fetch` | follows its 202 via the same follower (`poll_url` = `evadr/jobs/{id}`) |
+| `GET handoff/{job_id}` | new: the poll route of a hand-off (`poll_url`); not called directly |
+| `POST kolektr/jobs` | removed (route removed) |
+| `nexus/recommendations/*` (13 calls) | removed (routes removed) |
+
+The fixture also drops the standalone `recommendations/*` routes, which `api/app.py` no longer mounts.
+
+## 0.2.0 → 0.3.0
 
 Checked against the backend's route list at kobe-scraper 4fb33ea4 (module routers mounted as `kernel/bootstrap.py` does), copied to `src/test/resources/routes.tsv`; `LiveRoutesTest.everySdkCallIsALiveRoute` keeps it so. Paths are relative to `/api/v1/organizations/{organization_id}/`.
 

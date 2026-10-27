@@ -15,7 +15,7 @@ Add to your `pom.xml`:
 <dependency>
   <groupId>dev.kloakd</groupId>
   <artifactId>kloakd-sdk</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -63,12 +63,33 @@ data.records().forEach(System.out::println);
 var result = client.evadr().fetch("https://example.com");
 ```
 
-`fetch` answers within about 85 s. A slower site is handed off as a job
-(HTTP 202); `fetch` follows it and returns the job's result. Tune the wait:
+The API answers within about 85 s. A request still running then is handed
+off as a job (HTTP 202 with a `poll_url`); the SDK polls it and returns the
+same result as a direct answer. This applies to `evadr().fetch`,
+`kolektr().extract`, `fetchyr().authenticate`, `detectForms`, `fillForm`,
+`detectMfa` and `nexus().analyze`, `synthesize`, `execute`. Polls start
+after `pollInterval` and wait 1.5 times longer each time (at most 15 s), up
+to `pollTimeout`; a failed or expired job throws `JobFailedException`, one
+still running `JobTimeoutException`. Set the wait per client, or per call
+for `fetch`:
 
 ```java
+Kloakd client = Kloakd.builder()
+    .apiKey("sk-live-...")
+    .organizationId("your-org-uuid")
+    .pollInterval(Duration.ofSeconds(3))   // default
+    .pollTimeout(Duration.ofMinutes(15))   // default
+    .build();
+
 var result = client.evadr().fetch(url, false, false, null,
         Duration.ofSeconds(3), Duration.ofMinutes(15));
+```
+
+### Nexus: execute, then learn
+
+```java
+var exec = client.nexus().execute(strategyId, "https://example.com/products");
+var learned = client.nexus().knowledge(exec.executionResultId());
 ```
 
 ### Asynchronous (`CompletableFuture`)
@@ -105,6 +126,8 @@ Kloakd client = Kloakd.builder()
     .baseUrl("https://api.kloakd.dev")   // optional
     .timeout(Duration.ofSeconds(60))      // optional, default 30s
     .maxRetries(3)                        // optional, default 3
+    .pollInterval(Duration.ofSeconds(3))  // optional: first wait on a 202 hand-off
+    .pollTimeout(Duration.ofMinutes(15))  // optional: limit on following one
     .build();
 ```
 
@@ -131,6 +154,11 @@ try {
     System.out.println("Retry after: " + e.getRetryAfter() + "s");
 } catch (BillingUnavailableException e) {
     // 503 billing_unavailable — usage could not be checked; retry later
+} catch (JobFailedException e) {
+    // a request handed off as a job (202) failed or expired
+    System.out.println("Job " + e.getJobId() + ": " + e.getMessage());
+} catch (JobTimeoutException e) {
+    // still running at pollTimeout; the job may still finish
 } catch (UpstreamException e) {
     // 502 — upstream site fetch failed
 } catch (ApiException e) {
@@ -145,6 +173,7 @@ try {
 
 ```bash
 mvn test
+mvn --batch-mode clean verify -Dgpg.skip   # the release build: tests, Javadoc, JaCoCo check
 ```
 
 ## License

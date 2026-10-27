@@ -5,6 +5,49 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-10-28
+
+0.3.1 never reached Maven Central either: its release build stopped at the
+JaCoCo check (line coverage 0.63 of the 0.75 required). 0.4.0 measures 0.86
+line, 0.73 branch under the same `mvn --batch-mode clean verify`.
+
+### Added
+- Every route that can hand a request off as a job is followed: past about
+  85 s the API answers 202 with `job_id` and `poll_url`
+  (`/api/v1/organizations/{id}/handoff/{job_id}`), and the SDK polls it and
+  returns the same typed result as a direct answer. Covers
+  `kolektr().extract` (and the deprecated `page`), `fetchyr().authenticate`,
+  `detectForms`, `fillForm`, `detectMfa`, `nexus().analyze`, `synthesize`,
+  `execute`, as well as `evadr().fetch`, which now shares the one follower
+  (`HttpTransport.postFollowing` / `followHandOff`) and follows its own
+  `poll_url` (`evadr/jobs/{id}`).
+- Polling waits `pollInterval` before the first poll, then 1.5 times longer
+  each time, at most 15 s; it stops at `pollTimeout`. Defaults 3 s / 15 min,
+  set per client with `Kloakd.builder().pollInterval(...)` and
+  `.pollTimeout(...)`; `evadr().fetch` keeps its per-call overload.
+- `JobFailedException` (a failed job, or one the poll no longer finds: results
+  are kept for an hour) and `JobTimeoutException`, with `getJobId()`. Both
+  extend `ApiException` and keep the codes `job_failed` / `job_timeout` that
+  0.3 threw.
+- `NexusExecuteResult.executionResultId()` (`execution_result_id`): the id to
+  pass to `nexus().knowledge(...)`.
+
+### Removed (breaking)
+- The Nexus recommendation methods, whose routes the API removed (they
+  returned invented results): `recommendAnalyze`,
+  `listRecommendationApplications`, `getCacheStatistics`, `cleanupCache`,
+  `invalidateCache`, `getHooksStatus`, `enableHook`, `disableHook`,
+  `createPreference`, `getPreferences`, `updatePreference`,
+  `deletePreference`, `getRecommendationStatistics`.
+- `kolektr().createJob` (`POST kolektr/jobs`, removed for the same reason).
+  `listJobs` and `getJob` remain.
+
+### Changed
+- `NexusExecuteResult` gains a seventh component (`executionResultId`); code
+  calling its constructor directly must pass it.
+- `client.crawl` and `crawlStream` share one per-page fetch-and-extract step
+  (behaviour unchanged).
+
 ## [0.3.1] — 2026-10-28
 
 The 0.3.0 release build stopped at its Javadoc step (`@param hasMore` on
