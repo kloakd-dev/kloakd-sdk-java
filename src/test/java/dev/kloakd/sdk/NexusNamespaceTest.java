@@ -13,10 +13,12 @@ class NexusNamespaceTest {
 
     private MockWebServer server;
     private Kloakd client;
+    private Routes routes;
 
     @BeforeEach
     void setUp() throws Exception {
         server = startServer();
+        routes = routes(server);
         client = client(server);
     }
 
@@ -26,82 +28,47 @@ class NexusNamespaceTest {
     }
 
     @Test
-    void analyze_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "perception_id", "perc-001", "strategy", Map.of("type", "css"),
-                "page_type", "listing", "complexity_level", "medium",
-                "artifact_id", "art-n-001", "duration_ms", 120));
+    void analyze_sendsHtml() {
+        routes.json("POST nexus/analyze", 200, Map.of(
+                "url", "https://example.com", "page_type", "listing", "confidence", 0.9,
+                "strategy", Map.of("type", "css"), "perception_id", "p1",
+                "artifact", Map.of("artifact_id", "art-n")));
 
-        var result = client.nexus().analyze("https://example.com");
+        var result = client.nexus().analyze("https://example.com", "<html/>");
 
-        assertEquals("perc-001", result.perceptionId());
         assertEquals("listing", result.pageType());
-        assertEquals("medium", result.complexityLevel());
-        assertEquals(120, result.durationMs());
+        assertEquals(0.9, result.confidence());
+        assertEquals("art-n", result.artifactId());
+        assertEquals("<html/>", routes.bodies.get("POST nexus/analyze").get("html"));
     }
 
     @Test
-    void analyze_withOptions_sendsBody() throws Exception {
-        enqueue(server, 200, Map.of(
-                "perception_id", "perc-002", "strategy", Map.of(),
-                "page_type", "detail", "complexity_level", "low", "duration_ms", 80));
-        client.nexus().analyze("https://example.com", "<html/>", Map.of("max_selectors", 10));
+    void synthesize_sendsUrlHtmlGoal() {
+        routes.json("POST nexus/synthesize", 200, Map.of(
+                "url", "https://example.com", "goal", "prices", "program", "extract(...)",
+                "strategy_id", "st-1", "synthesis_time_ms", 40));
 
-        var body = requestBody(server.takeRequest());
-        assertEquals("<html/>", body.get("html"));
-        assertNotNull(body.get("constraints"));
+        var result = client.nexus().synthesize("https://example.com", "<html/>", "prices");
+
+        assertEquals("st-1", result.strategyId());
+        assertEquals("extract(...)", result.program());
+        assertEquals(Map.of("url", "https://example.com", "html", "<html/>", "goal", "prices"),
+                routes.bodies.get("POST nexus/synthesize"));
     }
 
     @Test
-    void synthesize_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "strategy_id", "strat-001", "strategy_name", "css_extractor",
-                "generated_code", "return doc.q('h1')", "synthesis_time_ms", 250));
+    void verifyExecuteKnowledge_readTheApiFields() {
+        routes.json("POST nexus/verify", 200, Map.of("strategy_id", "st-1", "verified", true,
+                "safety_score", 0.95, "violations", List.of()));
+        routes.json("POST nexus/execute", 200, Map.of("url", "https://example.com", "strategy_id", "st-1",
+                "success", true, "records", List.of(Map.of("a", 1)), "duration_ms", 12));
+        routes.json("POST nexus/knowledge", 200, Map.of("execution_result_id", "ex-1",
+                "learned_concepts", List.of(), "patterns", List.of(Map.of()), "total_patterns", 1));
 
-        var result = client.nexus().synthesize("perc-001");
-
-        assertEquals("strat-001", result.strategyId());
-        assertEquals(250, result.synthesisTimeMs());
-    }
-
-    @Test
-    void verify_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "verification_result_id", "v-001", "is_safe", true,
-                "risk_score", 0.1, "safety_score", 0.95,
-                "violations", List.of(), "duration_ms", 45));
-
-        var result = client.nexus().verify("strat-001");
-
-        assertTrue(result.isSafe());
-        assertEquals(0.1, result.riskScore(), 0.001);
-        assertEquals(0, result.violations().size());
-    }
-
-    @Test
-    void execute_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "execution_result_id", "exec-001", "success", true,
-                "records", List.of(Map.of("title", "Book A")),
-                "duration_ms", 800));
-
-        var result = client.nexus().execute("strat-001", "https://example.com");
-
-        assertEquals("exec-001", result.executionResultId());
-        assertEquals(1, result.records().size());
-        assertEquals("Book A", result.records().get(0).get("title"));
-    }
-
-    @Test
-    void knowledge_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "learned_concepts", List.of(Map.of("name", "product_listing")),
-                "learned_patterns", List.of(Map.of("selector", "h3 a")),
-                "duration_ms", 60));
-
-        var result = client.nexus().knowledge("exec-001");
-
-        assertEquals(1, result.learnedConcepts().size());
-        assertEquals(1, result.learnedPatterns().size());
+        assertTrue(client.nexus().verify("st-1").verified());
+        var exec = client.nexus().execute("st-1", "https://example.com");
+        assertEquals(1, exec.records().size());
+        assertEquals(12, exec.durationMs());
+        assertEquals(1, client.nexus().knowledge("ex-1").totalPatterns());
     }
 }

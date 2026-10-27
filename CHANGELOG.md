@@ -5,6 +5,58 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-10-27
+
+Every call now targets a live API route (`ROUTES.md`; `LiveRoutesTest`
+checks each call against `src/test/resources/routes.tsv`). Of 125 calls in
+0.2.0, 78 were right, 32 had a wrong path, fields or behaviour, and 15 had
+no live route.
+
+### Added
+- `evadr().fetch` follows a hand-off: past about 85 s the API answers 202
+  with a job; the SDK polls `evadr/jobs/{id}` and returns the job's result
+  (overload with poll interval and timeout; defaults 3 s / 15 min).
+- `PaymentRequiredException` (402), `QuotaExceededException` (429
+  `gb_exhausted`, not retried), `BillingUnavailableException` (503
+  `billing_unavailable`, honours `Retry-After`); `KloakdException.getCode()`
+  carries the API's error word.
+- `evadr().startFetchJob`, `followJob`, `jobEvents` (stream), `profile`;
+  `webgrph().startCrawl`, `crawlEvents` (stream), `getCrawlPages(id, cursor,
+  limit)`, `cancelCrawl`, and the session, detected-API and reader-view
+  methods (moved from Skanyr); `fetchyr().authenticate`, `resolveMfa`,
+  `resumeExecution`, `discoverAuthChain`, `getAuthChainStatus`;
+  `kolektr().extract`; Skanyr's site API (`listSites`, `createSiteFromCrawl`,
+  `getSite`, `setSitePolicy`, `deleteSite`, `siteResources`, `siteApis`,
+  `sync`, `search`, `extract`).
+
+### Changed (breaking)
+- `webgrph().crawl` waits for the crawl and returns every page, read by
+  cursor (no limit/offset); `CrawlResult` gains `status`, loses `hasMore`;
+  `PageNode` follows the API's node.
+- `evadr().fetchAsync` starts a job and completes with its result (it parsed
+  the job acknowledgement as a page); `fetchStream` streams the job's events;
+  `scan(url)` takes the URL only.
+- `fetchyr().createWorkflow(name, steps[, description, workflowType])`;
+  `executeWorkflow(id, targetUrl[, sessionArtifactId, inputData])`;
+  `fillForm` loses `submit`; `createMultiSiteWorkflow(name, sites)`;
+  `checkDuplicates` → `checkDuplicate(url, contentHash, sessionId)`; result
+  records follow the API's fields.
+- `kolektr().page` → `extract` (`page(url)` remains, deprecated); the schema is
+  sent as `schema_spec`; `pageAll` removed (extraction is not paginated);
+  `extractHtml` posts to `kolektr/extract/html`.
+- `nexus().analyze(url, html[, constraints])`; `synthesize(url, html, goal)`;
+  result records follow the API.
+- A JSON array response is returned as `{"items": [...]}` (it was dropped).
+
+### Removed (no live route)
+- `fetchyr().login` (use `storeCredentials` + `authenticate`),
+  `fetchyr().fetch` (use `evadr().fetch` with a session artifact),
+  `fetchyr().submitMfa`; `FetchyrResult`, `MfaResult`.
+- `webgrph().getHierarchy`, `getJob`; `evadr().getJobEvents` (now `jobEvents`).
+- Skanyr's discovery API (`discover`, `discoverAll`, `discoverStream`,
+  `analyzeBundle`, `hierarchy`, `expandNode`, `retry`, `health`, `getApiMap`,
+  `getJob`, `getDiscovery*`); `DiscoverResult`, `DiscoverEvent`, `ApiEndpoint`.
+
 ## [0.2.0] — 2026-05-13
 
 ### Added

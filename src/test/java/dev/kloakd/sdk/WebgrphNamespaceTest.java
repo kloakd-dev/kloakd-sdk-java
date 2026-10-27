@@ -1,8 +1,10 @@
 package dev.kloakd.sdk;
 
+import dev.kloakd.sdk.errors.ApiException;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -13,11 +15,15 @@ class WebgrphNamespaceTest {
 
     private MockWebServer server;
     private Kloakd client;
+    private Routes routes;
 
     @BeforeEach
     void setUp() throws Exception {
         server = startServer();
+        routes = routes(server);
         client = client(server);
+        routes.json("POST webgrph/crawl", 202, Map.of("success", true, "crawl_id", "c1",
+                "url", "https://example.com", "total_pages", 0, "max_depth_reached", 0));
     }
 
     @AfterEach
@@ -25,92 +31,76 @@ class WebgrphNamespaceTest {
         server.shutdown();
     }
 
-    Map<String, Object> crawlResponse() {
-        return Map.of(
-                "success", true, "crawl_id", "c-001", "url", "https://example.com",
-                "total_pages", 5, "max_depth_reached", 2,
-                "pages", List.of(Map.of("url", "https://example.com", "depth", 0,
-                        "title", "Home", "status_code", 200, "children", List.of())),
-                "has_more", false, "total", 5, "artifact_id", "art-c-001");
+    private void status(String... states) {
+        for (String s : states) {
+            routes.json("GET webgrph/crawl/c1", 200, Map.of("crawl_id", "c1", "status", s,
+                    "organization_id", TEST_ORG_ID, "total_pages", 3, "max_depth_reached", 1, "artifact_id", "art-c1"));
+        }
+    }
+
+    private static Map<String, Object> node(String url) {
+        return Map.of("id", url, "url", url, "depth", 1, "category", "page",
+                "children_urls", List.of(), "metadata", Map.of("title", "T " + url));
     }
 
     @Test
-    void crawl_parsesResult() {
-        enqueue(server, 200, crawlResponse());
-        var result = client.webgrph().crawl("https://example.com");
+    void crawl_waitsAndCollectsEveryPage() {
+        status("queued", "crawling", "completed");
+        routes.json("GET webgrph/crawl/c1/pages", 200, Map.of("crawl_id", "c1",
+                "nodes", List.of(node("a"), node("b")), "next_cursor", "2", "total", 3));
+        routes.json("GET webgrph/crawl/c1/pages", 200, Map.of("crawl_id", "c1",
+                "nodes", List.of(node("c")), "total", 3));
+
+        var result = client.webgrph().crawl("https://example.com", 2, 50, false, null,
+                Duration.ofMillis(1), Duration.ofSeconds(5));
 
         assertTrue(result.success());
-        assertEquals("c-001", result.crawlId());
-        assertEquals(5, result.totalPages());
-        assertEquals(1, result.pages().size());
-        assertEquals("Home", result.pages().get(0).title());
-        assertEquals("art-c-001", result.artifactId());
+        assertEquals(3, result.pages().size());
+        assertEquals("T a", result.pages().get(0).title());
+        assertEquals("art-c1", result.artifactId());
+        assertEquals(50, ((Number) routes.bodies.get("POST webgrph/crawl").get("max_pages")).intValue());
     }
 
     @Test
-    void crawl_sendsOptions() throws Exception {
-        enqueue(server, 200, crawlResponse());
-        client.webgrph().crawl("https://example.com", 3, 100, false, "sess-001", 0, 0);
+    void crawl_failedReturnsNoPages() {
+        status("failed");
 
-        var body = requestBody(server.takeRequest());
-        assertEquals(3, ((Number) body.get("max_depth")).intValue());
-        assertEquals(100, ((Number) body.get("max_pages")).intValue());
-        assertEquals("sess-001", body.get("session_artifact_id"));
+        var result = client.webgrph().crawl("https://example.com", 0, 0, false, null,
+                Duration.ofMillis(1), Duration.ofSeconds(5));
+
+        assertFalse(result.success());
+        assertEquals("failed", result.status());
+        assertTrue(result.pages().isEmpty());
     }
 
     @Test
-    void crawlAll_singlePage() {
-        enqueue(server, 200, crawlResponse());
-        var pages = client.webgrph().crawlAll("https://example.com", 0, 0);
-        assertEquals(1, pages.size());
+    void crawl_timesOut() {
+        status("crawling");
+
+        var ex = assertThrows(ApiException.class, () -> client.webgrph().crawl("https://example.com",
+                0, 0, false, null, Duration.ofMillis(1), Duration.ofMillis(20)));
+        assertEquals("crawl_timeout", ex.getCode());
     }
 
     @Test
-    void crawlAll_paginates() {
-        enqueue(server, 200, Map.of(
-                "success", true, "crawl_id", "c-001", "url", "https://example.com",
-                "total_pages", 2, "max_depth_reached", 1,
-                "pages", List.of(Map.of("url", "https://example.com/p1", "depth", 0, "children", List.of())),
-                "has_more", true, "total", 2));
-        enqueue(server, 200, Map.of(
-                "success", true, "crawl_id", "c-001", "url", "https://example.com",
-                "total_pages", 2, "max_depth_reached", 1,
-                "pages", List.of(Map.of("url", "https://example.com/p2", "depth", 1, "children", List.of())),
-                "has_more", false, "total", 2));
-
-        var pages = client.webgrph().crawlAll("https://example.com", 0, 0);
-        assertEquals(2, pages.size());
-        assertEquals(2, server.getRequestCount());
-    }
-
-    @Test
-    void crawlStream_yieldsEvents() {
-        enqueueSse(server,
-                Map.of("type", "page_discovered", "url", "https://example.com/a",
-                        "depth", 1, "metadata", Map.of()),
-                Map.of("type", "complete", "pages_found", 5, "metadata", Map.of()));
+    @SuppressWarnings("unchecked")
+    void crawlStream_startsTheCrawlAndStreamsItsEvents() {
+        routes.sse("GET webgrph/crawl/c1/events",
+                Map.of("type", "page_discovered", "url", "https://example.com/a", "metadata", Map.of()),
+                Map.of("type", "done", "metadata", Map.of()));
 
         var events = client.webgrph().crawlStream("https://example.com").toList();
 
         assertEquals(2, events.size());
         assertEquals("page_discovered", events.get(0).type());
-        assertEquals("https://example.com/a", events.get(0).url());
-        assertEquals(5, events.get(1).pagesFound());
     }
 
     @Test
-    void getHierarchy_urlContainsId() throws Exception {
-        enqueue(server, 200, Map.of("artifact_id", "art-c-001"));
-        client.webgrph().getHierarchy("art-c-001");
+    void sessions_movedFromSkanyr() {
+        routes.json("GET webgrph/sessions", 200, List.of(Map.of("id", "s1")));
+        routes.json("PATCH webgrph/sessions/s1/job", 200, Map.of("id", "s1", "last_job_id", "j1"));
 
-        assertTrue(server.takeRequest().getPath().contains("art-c-001"));
-    }
-
-    @Test
-    void getJob_urlContainsId() throws Exception {
-        enqueue(server, 200, Map.of("status", "running"));
-        client.webgrph().getJob("job-001");
-
-        assertTrue(server.takeRequest().getPath().contains("job-001"));
+        assertEquals(1, ((List<?>) client.webgrph().listSessions(true).get("items")).size());
+        assertEquals("j1", client.webgrph().updateSessionJob("s1", "j1").get("last_job_id"));
     }
 }

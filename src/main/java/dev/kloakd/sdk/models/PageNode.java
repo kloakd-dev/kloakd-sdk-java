@@ -1,20 +1,27 @@
 package dev.kloakd.sdk.models;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * A single page in the site hierarchy.
+ * A page in a crawl's hierarchy (an entry of {@code webgrph/crawl/{id}/pages}).
  *
- * @param url fully qualified URL of this page
- * @param depth depth level of this page in the crawl tree
- * @param title page title extracted from the HTML head
- * @param statusCode HTTP status code returned when this page was fetched
- * @param children list of child page URLs linked from this page
+ * @param id node ID
+ * @param url the page's URL
+ * @param parentUrl the linking page's URL, or null for the root
+ * @param depth depth from the root
+ * @param category the page's category
+ * @param title page title, or null
+ * @param children URLs this page links to
+ * @param metadata the node's metadata
  */
 public record PageNode(
+        String id,
         String url,
+        String parentUrl,
         int depth,
+        String category,
         String title,
-        Integer statusCode,
-        List<String> children
+        List<String> children,
+        Map<String, Object> metadata
 ) {}

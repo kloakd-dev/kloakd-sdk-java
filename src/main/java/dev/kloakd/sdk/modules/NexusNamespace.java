@@ -15,28 +15,22 @@ public final class NexusNamespace {
 
     public NexusNamespace(HttpTransport t) { this.t = t; }
 
-    public NexusAnalyzeResult analyze(String url) {
-        return analyze(url, null, null);
+    /** Classify a page and propose a strategy. The API needs the page's HTML. */
+    public NexusAnalyzeResult analyze(String url, String html) {
+        return analyze(url, html, null);
     }
 
     public NexusAnalyzeResult analyze(String url, String html, Map<String, Object> constraints) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
-        if (html != null) body.put("html", html);
+        body.put("html", html);
         if (constraints != null && !constraints.isEmpty()) body.put("constraints", constraints);
         return parseNexusAnalyzeResult(t.post("nexus/analyze", body));
     }
 
-    public NexusSynthesisResult synthesize(String perceptionId) {
-        return synthesize(perceptionId, null, 0);
-    }
-
-    public NexusSynthesisResult synthesize(String perceptionId, String strategy, int timeout) {
-        var body = new HashMap<String, Object>();
-        body.put("perception_id", perceptionId);
-        if (strategy != null) body.put("strategy", strategy);
-        if (timeout > 0) body.put("timeout", timeout);
-        return parseNexusSynthesisResult(t.post("nexus/synthesize", body));
+    /** Generate an extraction program for a page and a goal. */
+    public NexusSynthesisResult synthesize(String url, String html, String goal) {
+        return parseNexusSynthesisResult(t.post("nexus/synthesize", Map.of("url", url, "html", html, "goal", goal)));
     }
 
     public NexusVerifyResult verify(String strategyId) {
@@ -44,8 +38,15 @@ public final class NexusNamespace {
     }
 
     public NexusExecuteResult execute(String strategyId, String url) {
-        return parseNexusExecuteResult(t.post("nexus/execute",
-                Map.of("strategy_id", strategyId, "url", url)));
+        return execute(strategyId, url, null);
+    }
+
+    public NexusExecuteResult execute(String strategyId, String url, Map<String, Object> options) {
+        var body = new HashMap<String, Object>();
+        body.put("strategy_id", strategyId);
+        body.put("url", url);
+        if (options != null && !options.isEmpty()) body.put("options", options);
+        return parseNexusExecuteResult(t.post("nexus/execute", body));
     }
 
     public NexusKnowledgeResult knowledge(String executionResultId) {
@@ -80,31 +81,29 @@ public final class NexusNamespace {
     // ── parsers ──────────────────────────────────────────────────────────────
 
     static NexusAnalyzeResult parseNexusAnalyzeResult(Map<String, Object> m) {
-        return new NexusAnalyzeResult(str(m, "perception_id"), mapField(m, "strategy"),
-                str(m, "page_type"), str(m, "complexity_level"),
-                str(m, "artifact_id"), integer(m, "duration_ms"), str(m, "error"));
+        return new NexusAnalyzeResult(str(m, "url"), str(m, "perception_id"), str(m, "reasoning_id"),
+                mapField(m, "strategy"), str(m, "page_type"), dbl(m, "confidence"), nestedArtifactId(m));
     }
 
     static NexusSynthesisResult parseNexusSynthesisResult(Map<String, Object> m) {
         return new NexusSynthesisResult(str(m, "strategy_id"), str(m, "strategy_name"),
-                str(m, "generated_code"), str(m, "artifact_id"),
-                integer(m, "synthesis_time_ms"), str(m, "error"));
+                str(m, "strategy_type"), str(m, "program"), dbl(m, "confidence"),
+                mapList(m, "steps"), integer(m, "synthesis_time_ms"));
     }
 
     static NexusVerifyResult parseNexusVerifyResult(Map<String, Object> m) {
-        return new NexusVerifyResult(str(m, "verification_result_id"), bool(m, "is_safe"),
-                dbl(m, "risk_score"), dbl(m, "safety_score"),
-                strList(m, "violations"), integer(m, "duration_ms"), str(m, "error"));
+        return new NexusVerifyResult(str(m, "strategy_id"), bool(m, "verified"),
+                dbl(m, "safety_score"), strList(m, "violations"));
     }
 
     static NexusExecuteResult parseNexusExecuteResult(Map<String, Object> m) {
-        return new NexusExecuteResult(str(m, "execution_result_id"), bool(m, "success"),
-                mapList(m, "records"), str(m, "artifact_id"),
-                integer(m, "duration_ms"), str(m, "error"));
+        return new NexusExecuteResult(str(m, "strategy_id"), bool(m, "success"),
+                mapList(m, "records"), nestedArtifactId(m),
+                integer(m, "duration_ms"), str(m, "error_message"));
     }
 
     static NexusKnowledgeResult parseNexusKnowledgeResult(Map<String, Object> m) {
         return new NexusKnowledgeResult(mapList(m, "learned_concepts"),
-                mapList(m, "learned_patterns"), integer(m, "duration_ms"), str(m, "error"));
+                mapList(m, "patterns"), integer(m, "total_patterns"), integer(m, "duration_ms"));
     }
 }

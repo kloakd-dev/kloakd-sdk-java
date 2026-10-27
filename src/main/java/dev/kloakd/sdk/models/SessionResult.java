@@ -1,20 +1,20 @@
 package dev.kloakd.sdk.models;
 
 /**
- * Result of Fetchyr.login().
+ * Result of Fetchyr.authenticate().
  *
  * @param success whether the login succeeded
- * @param sessionId unique identifier for the authenticated session
- * @param url the URL of the page after login
- * @param artifactId storage artifact ID for the session state
- * @param screenshotUrl URL of a post-login screenshot, if captured
- * @param error error message if login failed, otherwise null
+ * @param sessionId the session's ID
+ * @param artifactId the authenticated session artifact (pass as sessionArtifactId)
+ * @param targetDomain the site's domain
+ * @param authMethod how the site authenticated
+ * @param error error message if success is false, otherwise null
  */
 public record SessionResult(
         boolean success,
         String sessionId,
-        String url,
         String artifactId,
-        String screenshotUrl,
+        String targetDomain,
+        String authMethod,
         String error
 ) {}

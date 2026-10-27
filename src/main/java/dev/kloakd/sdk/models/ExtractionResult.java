@@ -13,7 +13,6 @@ import java.util.Map;
  * @param totalRecords number of records in this response
  * @param pagesScraped number of pages scraped to produce these records
  * @param hasMore whether additional records are available
- * @param total total record count across all pages
  * @param artifactId storage artifact ID for the extraction
  * @param jobId async job ID if extraction was queued
  * @param error error message if success is false, otherwise null
@@ -25,8 +24,6 @@ public record ExtractionResult(
         List<Map<String, Object>> records,
         int totalRecords,
         int pagesScraped,
-        boolean hasMore,
-        int total,
         String artifactId,
         String jobId,
         String error

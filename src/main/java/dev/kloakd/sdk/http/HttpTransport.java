@@ -28,7 +28,7 @@ import java.util.stream.StreamSupport;
  * <p>Retry policy:
  * <ul>
  *   <li>Retryable: 429, 500, 502, 503, 504</li>
- *   <li>Non-retryable: 400, 401, 403, 404</li>
+ *   <li>Non-retryable: 400, 401, 402, 403, 404, and 429 {@code gb_exhausted}</li>
  *   <li>Strategy: exponential backoff — base 1s × 2^attempt, cap 60s</li>
  *   <li>429: respects {@code Retry-After} header / {@code retry_after} body field</li>
  *   <li>Default max retries: 3</li>
@@ -36,7 +36,7 @@ import java.util.stream.StreamSupport;
  */
 public class HttpTransport {
 
-    static final String SDK_VERSION = "0.2.0";
+    static final String SDK_VERSION = "0.3.0";
     private static final Set<Integer> RETRYABLE = Set.of(429, 500, 502, 503, 504);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -105,6 +105,21 @@ public class HttpTransport {
             String path,
             Map<String, Object> body,
             Map<String, String> params) {
+        return send(method, path, body, params).body();
+    }
+
+    /** A response's status and parsed body. */
+    public record Response(int status, Map<String, Object> body) {}
+
+    /**
+     * {@link #request} that also returns the HTTP status: a 202 from the
+     * synchronous fetch means the work continues as a job.
+     */
+    public Response send(
+            String method,
+            String path,
+            Map<String, Object> body,
+            Map<String, String> params) {
 
         String url = buildUrl(path, params);
         byte[] bodyBytes = serialise(body);
@@ -127,14 +142,15 @@ public class HttpTransport {
                         HttpResponse.BodyHandlers.ofString());
 
                 Map<String, Object> parsed = parseBody(resp.body());
-                KloakdException ex = raiseForStatus(resp.statusCode(), parsed);
-                if (ex == null) return parsed;
+                String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+                KloakdException ex = raiseForStatus(resp.statusCode(), parsed, retryAfter);
+                if (ex == null) return new Response(resp.statusCode(), parsed);
 
-                if (!RETRYABLE.contains(resp.statusCode())) throw ex;
+                if (!isRetryable(ex)) throw ex;
 
                 lastException = ex;
                 if (attempt < maxRetries) {
-                    sleep(backoffMs(attempt, resp.headers().firstValue("Retry-After").orElse(null), parsed));
+                    sleep(backoffMs(attempt, retryAfter, parsed));
                 }
             } catch (KloakdException e) {
                 throw e;
@@ -199,39 +215,24 @@ public class HttpTransport {
     // ── SSE streaming ─────────────────────────────────────────────────────────
 
     /**
-     * Open a server-sent events stream.
+     * Open a server-sent events stream with POST.
      * Returns a {@link Stream} of parsed data payloads (data-only lines).
      * The underlying HTTP connection is closed when the stream is closed.
      */
     public Stream<Map<String, Object>> stream(String path, Map<String, Object> body) {
-        String url = buildUrl(path, null);
         byte[] bodyBytes = serialise(body);
-        var req = baseRequest(url)
-                .header("Accept", "text/event-stream")
+        return sseDataStream(open(baseRequest(buildUrl(path, null))
                 .method("POST", bodyBytes != null
                         ? HttpRequest.BodyPublishers.ofByteArray(bodyBytes)
-                        : HttpRequest.BodyPublishers.noBody())
-                .build();
+                        : HttpRequest.BodyPublishers.noBody())));
+    }
 
-        try {
-            HttpResponse<InputStream> resp = httpClient.send(req,
-                    HttpResponse.BodyHandlers.ofInputStream());
-            KloakdException ex = raiseForStatus(resp.statusCode(), Map.of());
-            if (ex != null) {
-                resp.body().close();
-                throw ex;
-            }
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(resp.body(), StandardCharsets.UTF_8));
-            return sseDataStream(reader);
-        } catch (KloakdException e) {
-            throw e;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new KloakdException(0, "Interrupted: " + e.getMessage());
-        } catch (IOException e) {
-            throw new KloakdException(0, "IO error: " + e.getMessage());
-        }
+    /**
+     * Open a server-sent events stream with GET (job, crawl and pipeline
+     * event routes).
+     */
+    public Stream<Map<String, Object>> getStream(String path, Map<String, String> params) {
+        return sseDataStream(open(baseRequest(buildUrl(path, params)).GET()));
     }
 
     /**
@@ -239,26 +240,27 @@ public class HttpTransport {
      * Returns a {@link Stream} of {@code String[2]}: [eventName, dataJson].
      */
     public Stream<String[]> streamWithEvents(String path, Map<String, Object> body) {
-        String url = buildUrl(path, null);
         byte[] bodyBytes = serialise(body);
-        var req = baseRequest(url)
-                .header("Accept", "text/event-stream")
+        return sseEventStream(open(baseRequest(buildUrl(path, null))
                 .method("POST", bodyBytes != null
                         ? HttpRequest.BodyPublishers.ofByteArray(bodyBytes)
-                        : HttpRequest.BodyPublishers.noBody())
-                .build();
+                        : HttpRequest.BodyPublishers.noBody())));
+    }
 
+    private BufferedReader open(HttpRequest.Builder builder) {
+        var req = builder.header("Accept", "text/event-stream").build();
         try {
             HttpResponse<InputStream> resp = httpClient.send(req,
                     HttpResponse.BodyHandlers.ofInputStream());
-            KloakdException ex = raiseForStatus(resp.statusCode(), Map.of());
-            if (ex != null) {
-                resp.body().close();
-                throw ex;
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                String errBody;
+                try (InputStream in = resp.body()) {
+                    errBody = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                }
+                throw raiseForStatus(resp.statusCode(), parseBody(errBody),
+                        resp.headers().firstValue("Retry-After").orElse(null));
             }
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(resp.body(), StandardCharsets.UTF_8));
-            return sseEventStream(reader);
+            return new BufferedReader(new InputStreamReader(resp.body(), StandardCharsets.UTF_8));
         } catch (KloakdException e) {
             throw e;
         } catch (InterruptedException e) {
@@ -354,21 +356,48 @@ public class HttpTransport {
     // ── Error mapping ─────────────────────────────────────────────────────────
 
     public static KloakdException raiseForStatus(int status, Map<String, Object> body) {
+        return raiseForStatus(status, body, null);
+    }
+
+    /**
+     * Map an HTTP status to the SDK exception, or null for 2xx. The gateway's
+     * errors carry {@code {"detail": {"error": <code>, "message": <text>, ...}}}.
+     */
+    public static KloakdException raiseForStatus(int status, Map<String, Object> body, String retryAfterHeader) {
         if (status >= 200 && status < 300) return null;
+        Map<String, Object> detail = detail(body);
+        String code = str(detail, "error");
         String msg = extractMessage(body, status);
-        return switch (status) {
-            case 401 -> new AuthenticationException(msg);
-            case 403 -> new NotEntitledException(msg,
-                    str(body, "module"), str(body, "upgrade_url"));
-            case 429 -> new RateLimitException(msg,
-                    intVal(body, "retry_after", 60), str(body, "reset_at"));
-            case 502 -> new UpstreamException(msg);
-            default -> new ApiException(status, msg);
-        };
+        int headerRetry = -1;
+        if (retryAfterHeader != null) {
+            try { headerRetry = (int) Double.parseDouble(retryAfterHeader.trim()); } catch (NumberFormatException ignored) {}
+        }
+        int retry60 = headerRetry > 0 ? headerRetry : intVal(detail, "retry_after", intVal(body, "retry_after", 60));
+        int retry30 = headerRetry > 0 ? headerRetry : intVal(detail, "retry_after", intVal(body, "retry_after", 30));
+        String upgradeUrl = str(detail, "upgrade_url") != null ? str(detail, "upgrade_url") : str(body, "upgrade_url");
+
+        if (status == 401) return new AuthenticationException(msg);
+        if (status == 402) return new PaymentRequiredException(msg, upgradeUrl);
+        if (status == 403) return new NotEntitledException(msg,
+                str(detail, "module") != null ? str(detail, "module") : str(body, "module"), upgradeUrl);
+        if (status == 429 && "gb_exhausted".equals(code)) return new QuotaExceededException(msg, upgradeUrl,
+                dbl(detail, "residential_gb_used"), dbl(detail, "residential_gb_limit"),
+                dbl(detail, "purchased_gb_balance"));
+        if (status == 429) return new RateLimitException(msg, retry60,
+                str(detail, "reset_at") != null ? str(detail, "reset_at") : str(body, "reset_at"), code);
+        if (status == 503 && "billing_unavailable".equals(code)) return new BillingUnavailableException(msg, retry30);
+        if (status == 502) return new UpstreamException(msg);
+        return new ApiException(status, msg, code);
     }
 
     public static boolean isRetryable(int status) {
         return RETRYABLE.contains(status);
+    }
+
+    /** As {@link #isRetryable(int)}, except an exhausted quota and a failed payment are not retried. */
+    public static boolean isRetryable(KloakdException ex) {
+        if (ex instanceof QuotaExceededException || ex instanceof PaymentRequiredException) return false;
+        return RETRYABLE.contains(ex.getStatusCode());
     }
 
     // ── Backoff ───────────────────────────────────────────────────────────────
@@ -379,18 +408,29 @@ public class HttpTransport {
                 return (long) (Double.parseDouble(retryAfterHeader.trim()) * 1000);
             } catch (NumberFormatException ignored) {}
         }
-        if (body != null && body.containsKey("retry_after")) {
-            try {
-                double secs = ((Number) body.get("retry_after")).doubleValue();
-                if (secs > 0) return (long) (secs * 1000);
-            } catch (Exception ignored) {}
+        for (Map<String, Object> m : body == null ? List.<Map<String, Object>>of() : List.of(body, detail(body))) {
+            if (m.get("retry_after") instanceof Number n && n.doubleValue() > 0) {
+                return (long) (n.doubleValue() * 1000);
+            }
         }
         return Math.min(1000L * (1L << attempt), 60_000L);
     }
 
     // ── Utilities ─────────────────────────────────────────────────────────────
 
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> detail(Map<String, Object> body) {
+        if (body != null && body.get("detail") instanceof Map<?, ?> d) return (Map<String, Object>) d;
+        return Map.of();
+    }
+
+    static double dbl(Map<String, Object> m, String key) {
+        return m.get(key) instanceof Number n ? n.doubleValue() : 0;
+    }
+
     private static String extractMessage(Map<String, Object> body, int status) {
+        Map<String, Object> d = detail(body);
+        if (d.get("message") != null) return String.valueOf(d.get("message"));
         if (body.containsKey("detail")) return String.valueOf(body.get("detail"));
         if (body.containsKey("message")) return String.valueOf(body.get("message"));
         return "HTTP " + status;
@@ -407,11 +447,15 @@ public class HttpTransport {
         return def;
     }
 
+    /** Parse a JSON body; a top-level array is returned as {@code {"items": [...]}}. */
     @SuppressWarnings("unchecked")
     public Map<String, Object> parseBody(String json) {
         if (json == null || json.isBlank()) return Map.of();
         try {
-            return MAPPER.readValue(json, new TypeReference<>() {});
+            Object value = MAPPER.readValue(json, Object.class);
+            if (value instanceof Map<?, ?> m) return (Map<String, Object>) m;
+            if (value instanceof List<?> l) return Map.of("items", l);
+            return Map.of();
         } catch (Exception e) {
             return Map.of();
         }

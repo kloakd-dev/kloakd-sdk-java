@@ -5,4 +5,8 @@ public class ApiException extends KloakdException {
     public ApiException(int statusCode, String message) {
         super(statusCode, message);
     }
+
+    public ApiException(int statusCode, String message, String code) {
+        super(statusCode, message, code);
+    }
 }

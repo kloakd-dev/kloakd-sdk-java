@@ -6,7 +6,11 @@ public class RateLimitException extends KloakdException {
     private final String resetAt;
 
     public RateLimitException(String message, int retryAfter, String resetAt) {
-        super(429, message);
+        this(message, retryAfter, resetAt, null);
+    }
+
+    public RateLimitException(String message, int retryAfter, String resetAt, String code) {
+        super(429, message, code);
         this.retryAfter = retryAfter;
         this.resetAt = resetAt;
     }

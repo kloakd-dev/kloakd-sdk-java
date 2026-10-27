@@ -15,7 +15,7 @@ Add to your `pom.xml`:
 <dependency>
   <groupId>dev.kloakd</groupId>
   <artifactId>kloakd-sdk</artifactId>
-  <version>0.1.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
@@ -33,13 +33,13 @@ Kloakd client = Kloakd.builder()
 var page = client.evadr().fetch("https://target.com");
 System.out.println("Bypassed: " + page.antiBotBypassed());
 
-// 2. Site crawl (reuse artifact)
+// 2. Site crawl (waits for the crawl, returns every page)
 var crawl = client.webgrph().crawl("https://target.com");
 System.out.println("Pages found: " + crawl.totalPages());
 
 // 3. Data extraction (reuse fetch artifact)
-var data = client.kolektr().page("https://target.com/products",
-    null, page.artifactId(), null, null, 0, 0);
+var data = client.kolektr().extract("https://target.com/products",
+    null, page.artifactId(), null, null);
 data.records().forEach(System.out::println);
 ```
 
@@ -48,8 +48,8 @@ data.records().forEach(System.out::println);
 | Namespace | Description |
 |-----------|-------------|
 | `client.evadr()` | Anti-bot fetch, analysis, proxy storage |
-| `client.webgrph()` | Site crawl, hierarchy, job status |
-| `client.skanyr()` | API endpoint discovery |
+| `client.webgrph()` | Site crawl, crawl pages and events, detected APIs, reader view, sessions |
+| `client.skanyr()` | Synced sites, resources, search, extraction |
 | `client.nexus()` | AI page analysis, strategy synthesis, execution |
 | `client.parlyr()` | Natural language → scrape intent parsing |
 | `client.fetchyr()` | Authenticated browser sessions, workflows |
@@ -61,6 +61,14 @@ data.records().forEach(System.out::println);
 
 ```java
 var result = client.evadr().fetch("https://example.com");
+```
+
+`fetch` answers within about 85 s. A slower site is handed off as a job
+(HTTP 202); `fetch` follows it and returns the job's result. Tune the wait:
+
+```java
+var result = client.evadr().fetch(url, false, false, null,
+        Duration.ofSeconds(3), Duration.ofMinutes(15));
 ```
 
 ### Asynchronous (`CompletableFuture`)
@@ -78,13 +86,14 @@ try (var stream = client.evadr().fetchStream("https://example.com")) {
 }
 ```
 
-### Pagination helpers
+### Crawls
 
-All list methods have an `*All` variant that auto-paginates:
+Crawls run asynchronously. `crawl` starts one, waits for it and reads every
+page by cursor; `startCrawl` returns at once with the crawl ID.
 
 ```java
 List<PageNode> pages = client.webgrph().crawlAll("https://example.com", 3, 500);
-List<Map<String, Object>> records = client.kolektr().pageAll("https://example.com", schema);
+var started = client.webgrph().startCrawl("https://example.com", 3, 500, false, null);
 ```
 
 ## Configuration
@@ -111,9 +120,17 @@ try {
 } catch (NotEntitledException e) {
     // 403 — org not on required plan
     System.out.println("Upgrade at: " + e.getUpgradeUrl());
+} catch (PaymentRequiredException e) {
+    // 402 — the plan's last payment failed
+    System.out.println("Update payment at: " + e.getUpgradeUrl());
+} catch (QuotaExceededException e) {
+    // 429 gb_exhausted — allocation and top-ups used up (not retried)
+    System.out.println("GB used " + e.getGbUsed() + " of " + e.getGbLimit());
 } catch (RateLimitException e) {
-    // 429 — quota exceeded
+    // 429 — too many requests
     System.out.println("Retry after: " + e.getRetryAfter() + "s");
+} catch (BillingUnavailableException e) {
+    // 503 billing_unavailable — usage could not be checked; retry later
 } catch (UpstreamException e) {
     // 502 — upstream site fetch failed
 } catch (ApiException e) {

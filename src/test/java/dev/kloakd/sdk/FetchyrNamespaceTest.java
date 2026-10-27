@@ -13,10 +13,12 @@ class FetchyrNamespaceTest {
 
     private MockWebServer server;
     private Kloakd client;
+    private Routes routes;
 
     @BeforeEach
     void setUp() throws Exception {
         server = startServer();
+        routes = routes(server);
         client = client(server);
     }
 
@@ -26,128 +28,88 @@ class FetchyrNamespaceTest {
     }
 
     @Test
-    void login_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "success", true, "session_id", "sess-001",
-                "url", "https://example.com/dashboard",
-                "artifact_id", "art-sess-001",
-                "screenshot_url", "https://cdn.kloakd.dev/screenshot.png"));
+    void authenticate_sendsCredentialNameAndTarget() {
+        routes.json("POST fetchyr/authenticate", 200, Map.of(
+                "success", true, "session_id", "s1", "artifact_id", "art-1",
+                "target_domain", "example.com", "auth_method", "form"));
 
-        var result = client.fetchyr().login("https://example.com/login",
-                "#user", "#pass", "user@example.com", "secret");
+        var result = client.fetchyr().authenticate("my-login", "https://example.com/login");
 
         assertTrue(result.success());
-        assertEquals("sess-001", result.sessionId());
-        assertEquals("art-sess-001", result.artifactId());
+        assertEquals("art-1", result.artifactId());
+        assertEquals("form", result.authMethod());
+        assertEquals(Map.of("credential_name", "my-login", "target_url", "https://example.com/login"),
+                routes.bodies.get("POST fetchyr/authenticate"));
     }
 
     @Test
-    void login_withOptions_sendsBody() throws Exception {
-        enqueue(server, 200, Map.of("success", true, "session_id", "s"));
-        client.fetchyr().login("https://example.com/login", "#u", "#p", "u", "p",
-                "#submit", "/dashboard");
+    void createWorkflow_sendsNoUrl_andReadsId() {
+        routes.json("POST fetchyr/workflows", 201, Map.of(
+                "id", "wf-1", "name", "Login", "workflow_type", "form", "steps", List.of(),
+                "is_active", true, "created_at", "2026-10-27T00:00:00Z"));
 
-        var body = requestBody(server.takeRequest());
-        assertEquals("#submit", body.get("submit_selector"));
-        assertEquals("/dashboard", body.get("success_url_contains"));
+        var result = client.fetchyr().createWorkflow("Login", List.of(Map.of("action", "click")), null, "form");
+
+        assertEquals("wf-1", result.workflowId());
+        assertTrue(result.isActive());
+        assertFalse(routes.bodies.get("POST fetchyr/workflows").containsKey("url"));
+        assertEquals("form", routes.bodies.get("POST fetchyr/workflows").get("workflow_type"));
     }
 
     @Test
-    void fetch_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "success", true, "url", "https://example.com/protected",
-                "status_code", 200, "html", "<html/>",
-                "session_artifact_id", "art-sess-001"));
+    void executeWorkflow_sendsTargetUrl() {
+        routes.json("POST fetchyr/workflows/wf-1/execute", 202, Map.of(
+                "execution_id", "ex-1", "workflow_id", "wf-1", "status", "running",
+                "started_at", "2026-10-27T00:00:00Z", "result", Map.of("k", "v")));
 
-        var result = client.fetchyr().fetch("https://example.com/protected", "art-sess-001");
+        var result = client.fetchyr().executeWorkflow("wf-1", "https://example.com");
 
-        assertEquals(200, result.statusCode());
-        assertEquals("art-sess-001", result.sessionArtifactId());
+        assertEquals("ex-1", result.executionId());
+        assertEquals("v", result.result().get("k"));
+        assertEquals("https://example.com", routes.bodies.get("POST fetchyr/workflows/wf-1/execute").get("target_url"));
     }
 
     @Test
-    void createWorkflow_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "workflow_id", "wf-001", "name", "login_flow",
-                "steps", List.of(), "created_at", "2026-04-09T00:00:00Z"));
+    void detectForms_usesTheLiveRouteAndFields() {
+        routes.json("POST fetchyr/form/detect", 200, Map.of(
+                "url", "https://example.com", "forms_found", 2, "login_form_detected", true,
+                "fields", List.of(Map.of("name", "user"))));
 
-        var result = client.fetchyr().createWorkflow("login_flow",
-                List.of(Map.of("action", "click")), "https://example.com");
+        var result = client.fetchyr().detectForms("https://example.com", null);
 
-        assertEquals("wf-001", result.workflowId());
-        assertEquals("login_flow", result.name());
+        assertEquals(2, result.formsFound());
+        assertTrue(result.loginFormDetected());
+        assertEquals(1, result.fields().size());
     }
 
     @Test
-    void executeWorkflow_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "execution_id", "exec-001", "workflow_id", "wf-001",
-                "status", "running", "records", List.of()));
+    void resolveMfa_postsTheResolution() {
+        routes.json("POST fetchyr/mfa-queue/ch-1/resolve", 200, Map.of("id", "ch-1", "status", "resolved"));
 
-        var result = client.fetchyr().executeWorkflow("wf-001");
+        var result = client.fetchyr().resolveMfa("ch-1", "123456");
 
-        assertEquals("running", result.status());
-        assertEquals("exec-001", result.executionId());
+        assertEquals("resolved", result.get("status"));
+        assertEquals("123456", routes.bodies.get("POST fetchyr/mfa-queue/ch-1/resolve").get("resolution"));
     }
 
     @Test
-    void getExecution_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "execution_id", "exec-001", "workflow_id", "wf-001",
-                "status", "completed", "records", List.of(Map.of("data", "value"))));
+    void checkDuplicate_sendsUrl() {
+        routes.json("POST fetchyr/deduplication/check", 200, Map.of(
+                "is_duplicate", true, "original_url", "https://example.com/a", "similarity_score", 0.98));
 
-        var result = client.fetchyr().getExecution("wf-001", "exec-001");
+        var result = client.fetchyr().checkDuplicate("https://example.com/b", null, "d1");
 
-        assertEquals("completed", result.status());
-        assertEquals(1, result.records().size());
+        assertTrue(result.isDuplicate());
+        assertEquals(0.98, result.similarityScore());
+        assertEquals("d1", routes.bodies.get("POST fetchyr/deduplication/check").get("session_id"));
     }
 
     @Test
-    void detectForms_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "forms", List.of(Map.of("selector", "form#login", "confidence", 0.99)),
-                "total_forms", 1));
+    void listMfaChallenges_keepsAnArrayBody() {
+        routes.json("GET fetchyr/mfa-queue", 200, List.of(Map.of("id", "ch-1")));
 
-        var result = client.fetchyr().detectForms("https://example.com/login", null);
+        var result = client.fetchyr().listMfaChallenges();
 
-        assertEquals(1, result.totalForms());
-        assertEquals(1, result.forms().size());
-    }
-
-    @Test
-    void detectMfa_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "mfa_detected", true, "challenge_id", "chall-001", "mfa_type", "totp"));
-
-        var result = client.fetchyr().detectMfa("https://example.com/mfa", null);
-
-        assertTrue(result.mfaDetected());
-        assertEquals("totp", result.mfaType());
-        assertEquals("chall-001", result.challengeId());
-    }
-
-    @Test
-    void submitMfa_parsesResult() {
-        enqueue(server, 200, Map.of("success", true, "session_artifact_id", "art-sess-002"));
-
-        var result = client.fetchyr().submitMfa("chall-001", "123456");
-
-        assertTrue(result.success());
-        assertEquals("art-sess-002", result.sessionArtifactId());
-    }
-
-    @Test
-    void checkDuplicates_parsesResult() {
-        enqueue(server, 200, Map.of(
-                "unique_records", List.of(Map.of("id", "1")),
-                "duplicate_count", 2, "total_input", 3));
-
-        var result = client.fetchyr().checkDuplicates(
-                List.of(Map.of("id", "1"), Map.of("id", "2"), Map.of("id", "2")),
-                "example.com");
-
-        assertEquals(2, result.duplicateCount());
-        assertEquals(3, result.totalInput());
-        assertEquals(1, result.uniqueRecords().size());
+        assertEquals(1, ((List<?>) result.get("items")).size());
     }
 }

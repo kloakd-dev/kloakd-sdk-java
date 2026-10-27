@@ -3,15 +3,10 @@ package dev.kloakd.sdk.models;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Result of Fetchyr.detectForms().
- *
- * @param forms list of detected forms with their field metadata
- * @param totalForms total number of forms detected on the page
- * @param error error message if detection failed, otherwise null
- */
+/** Result of Fetchyr.detectForms(). */
 public record FormDetectionResult(
-        List<Map<String, Object>> forms,
-        int totalForms,
-        String error
+        String url,
+        int formsFound,
+        boolean loginFormDetected,
+        List<Map<String, Object>> fields
 ) {}

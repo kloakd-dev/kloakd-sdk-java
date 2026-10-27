@@ -13,10 +13,17 @@ class KolektrNamespaceTest {
 
     private MockWebServer server;
     private Kloakd client;
+    private Routes routes;
+
+    private static final Map<String, Object> EXTRACTION = Map.of(
+            "success", true, "url", "https://example.com", "method", "l1_css",
+            "records", List.of(Map.of("title", "Book A")), "total_records", 1, "pages_scraped", 1,
+            "artifact", Map.of("artifact_id", "art-ext-1"));
 
     @BeforeEach
     void setUp() throws Exception {
         server = startServer();
+        routes = routes(server);
         client = client(server);
     }
 
@@ -25,81 +32,38 @@ class KolektrNamespaceTest {
         server.shutdown();
     }
 
-    Map<String, Object> extractionResponse() {
-        return Map.of(
-                "success", true, "url", "https://example.com", "method", "l1_css",
-                "records", List.of(Map.of("title", "Book A", "price", "$10")),
-                "total_records", 1, "pages_scraped", 1,
-                "has_more", false, "total", 1, "artifact_id", "art-e-001");
+    @Test
+    void extract_sendsSchemaSpec() {
+        routes.json("POST kolektr/extract", 200, EXTRACTION);
+
+        var result = client.kolektr().extract("https://example.com",
+                Map.of("title", "css:h3"), "art-fetch-1", null, null);
+
+        assertEquals(1, result.totalRecords());
+        assertEquals("art-ext-1", result.artifactId());
+        var body = routes.bodies.get("POST kolektr/extract");
+        assertNotNull(body.get("schema_spec"));
+        assertFalse(body.containsKey("schema"));
+        assertEquals("art-fetch-1", body.get("fetch_artifact_id"));
     }
 
     @Test
-    void page_parsesResult() {
-        enqueue(server, 200, extractionResponse());
-        var result = client.kolektr().page("https://example.com");
+    @SuppressWarnings("deprecation")
+    void page_isExtract() {
+        routes.json("POST kolektr/extract", 200, EXTRACTION);
+
+        client.kolektr().page("https://example.com");
+
+        assertEquals(List.of("POST kolektr/extract"), routes.seen);
+    }
+
+    @Test
+    void extractHtml_usesTheLiveRoute() {
+        routes.json("POST kolektr/extract/html", 200, EXTRACTION);
+
+        var result = client.kolektr().extractHtml("<html/>", "https://example.com", Map.of("title", "css:h1"));
 
         assertTrue(result.success());
-        assertEquals("l1_css", result.method());
-        assertEquals(1, result.totalRecords());
-        assertEquals("art-e-001", result.artifactId());
-        assertEquals("Book A", result.records().get(0).get("title"));
-    }
-
-    @Test
-    void page_withSchema_sendsBody() throws Exception {
-        enqueue(server, 200, extractionResponse());
-        client.kolektr().page("https://example.com",
-                Map.of("title", "css:h3 a"), "art-fetch-001", null, null, 0, 0);
-
-        var body = requestBody(server.takeRequest());
-        assertNotNull(body.get("schema"));
-        assertEquals("art-fetch-001", body.get("fetch_artifact_id"));
-    }
-
-    @Test
-    void pageAll_singlePage() {
-        enqueue(server, 200, extractionResponse());
-        var records = client.kolektr().pageAll("https://example.com", null);
-        assertEquals(1, records.size());
-        assertEquals("Book A", records.get(0).get("title"));
-    }
-
-    @Test
-    void pageAll_paginates() {
-        enqueue(server, 200, Map.of(
-                "success", true, "url", "https://example.com", "method", "l1_css",
-                "records", List.of(Map.of("id", "1")),
-                "total_records", 2, "pages_scraped", 1,
-                "has_more", true, "total", 2));
-        enqueue(server, 200, Map.of(
-                "success", true, "url", "https://example.com", "method", "l1_css",
-                "records", List.of(Map.of("id", "2")),
-                "total_records", 2, "pages_scraped", 1,
-                "has_more", false, "total", 2));
-
-        var records = client.kolektr().pageAll("https://example.com", null);
-
-        assertEquals(2, records.size());
-        assertEquals(2, server.getRequestCount());
-    }
-
-    @Test
-    void extractHtml_sendsBody() throws Exception {
-        enqueue(server, 200, Map.of(
-                "success", true, "url", "https://example.com", "method", "l1_css",
-                "records", List.of(Map.of("price", "$12")),
-                "total_records", 1, "pages_scraped", 0,
-                "has_more", false, "total", 1));
-
-        var result = client.kolektr().extractHtml(
-                "<html><p class='price'>$12</p></html>", "https://example.com",
-                Map.of("price", "css:p.price"));
-
-        assertEquals(1, result.totalRecords());
-
-        var body = requestBody(server.takeRequest());
-        assertNotNull(body.get("html"));
-        assertEquals("https://example.com", body.get("url"));
-        assertNotNull(body.get("schema"));
+        assertNotNull(routes.bodies.get("POST kolektr/extract/html").get("schema_spec"));
     }
 }

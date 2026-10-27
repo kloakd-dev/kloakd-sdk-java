@@ -82,7 +82,7 @@ public final class Kloakd {
         int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
 
         var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
-                opts.includeExternalLinks(), opts.sessionArtifactId(), 0, 0);
+                opts.includeExternalLinks(), opts.sessionArtifactId());
 
         var pages = new ArrayList<CrawlPage>();
         int fetched = 0;
@@ -99,8 +99,8 @@ public final class Kloakd {
                     try {
                         @SuppressWarnings("unchecked")
                         var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
-                        var extraction = kolektr.page(node.url(), schema,
-                                fetchResult.artifactId(), null, null, 0, 0);
+                        var extraction = kolektr.extract(node.url(), schema,
+                                fetchResult.artifactId(), null, null);
                         if (!extraction.records().isEmpty()) {
                             structuredData = extraction.records().get(0);
                         }
@@ -143,7 +143,7 @@ public final class Kloakd {
         int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
 
         var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
-                opts.includeExternalLinks(), opts.sessionArtifactId(), 0, 0);
+                opts.includeExternalLinks(), opts.sessionArtifactId());
 
         int total = crawlResult.totalPages();
         var events = new ArrayList<CrawlProgressEvent>();
@@ -171,8 +171,8 @@ public final class Kloakd {
                     try {
                         @SuppressWarnings("unchecked")
                         var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
-                        var extraction = kolektr.page(node.url(), schema,
-                                fetchResult.artifactId(), null, null, 0, 0);
+                        var extraction = kolektr.extract(node.url(), schema,
+                                fetchResult.artifactId(), null, null);
                         if (!extraction.records().isEmpty()) {
                             structuredData = extraction.records().get(0);
                         }

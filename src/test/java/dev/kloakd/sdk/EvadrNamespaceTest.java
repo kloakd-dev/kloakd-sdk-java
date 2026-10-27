@@ -70,40 +70,34 @@ class EvadrNamespaceTest {
     }
 
     @Test
-    void fetchAsync_returnsCompletableFuture() throws Exception {
-        enqueue(server, 200, Map.of(
-                "success", true, "url", "https://example.com",
-                "status_code", 200, "tier_used", 1, "anti_bot_bypassed", false));
+    void fetchAsync_startsAJobAndCompletesWithItsResult() throws Exception {
+        var routes = routes(server);
+        routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j1", "status", "pending", "message", "queued"));
+        routes.json("GET evadr/jobs/j1", 200, Map.of("job_id", "j1", "status", "completed", "result", Map.of(
+                "success", true, "url", "https://example.com", "status_code", 200, "tier_used", 1)));
 
-        var future = client.evadr().fetchAsync("https://example.com");
-        var result = future.get(5, TimeUnit.SECONDS);
+        var result = client.evadr().fetchAsync("https://example.com", false, false, null,
+                java.time.Duration.ofMillis(1), java.time.Duration.ofSeconds(5)).get(5, TimeUnit.SECONDS);
 
-        assertNotNull(result);
         assertTrue(result.success());
+        assertEquals(1, result.tierUsed());
     }
 
     @Test
-    void fetchStream_yieldsEvents() {
-        enqueueSse(server,
+    @SuppressWarnings("unchecked")
+    void fetchStream_startsAJobAndStreamsItsEvents() {
+        var routes = routes(server);
+        routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j2", "status", "pending", "message", "queued"));
+        routes.sse("GET evadr/jobs/j2/events",
                 Map.of("type", "tier_attempt", "tier", 1, "metadata", Map.of()),
                 Map.of("type", "tier_success", "tier", 1, "vendor", "cloudflare", "metadata", Map.of()),
                 Map.of("type", "complete", "metadata", Map.of()));
 
-        var events = client.evadr().fetchStream("https://example.com").toList();
+        var events = client.evadr().fetchStream("https://example.com", true).toList();
 
         assertEquals(3, events.size());
-        assertEquals("tier_attempt", events.get(0).type());
         assertEquals("cloudflare", events.get(1).vendor());
-        assertEquals("complete", events.get(2).type());
-    }
-
-    @Test
-    void fetchStream_withForceBrowser_sendsBody() throws Exception {
-        enqueueSse(server, Map.of("type", "done", "metadata", Map.of()));
-        client.evadr().fetchStream("https://example.com", true).toList();
-
-        var body = requestBody(server.takeRequest());
-        assertEquals(Boolean.TRUE, body.get("force_browser"));
+        assertEquals(Boolean.TRUE, routes.bodies.get("POST evadr/fetch/async").get("force_browser"));
     }
 
     @Test

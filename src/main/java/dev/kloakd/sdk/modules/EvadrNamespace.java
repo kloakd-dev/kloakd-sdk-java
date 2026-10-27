@@ -3,6 +3,10 @@ package dev.kloakd.sdk.modules;
 import dev.kloakd.sdk.http.HttpTransport;
 import dev.kloakd.sdk.models.*;
 
+import dev.kloakd.sdk.errors.ApiException;
+import dev.kloakd.sdk.errors.KloakdException;
+
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -16,43 +20,111 @@ public final class EvadrNamespace {
 
     // ── Fetch ─────────────────────────────────────────────────────────────────
 
+    /** Default interval between polls of a handed-off fetch. */
+    public static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
+    /** Default limit on following a handed-off fetch. */
+    public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMinutes(15);
+
     public FetchResult fetch(String url) {
         return fetch(url, false, false, null);
     }
 
     public FetchResult fetch(String url, boolean forceBrowser, boolean useProxy, String sessionArtifactId) {
+        return fetch(url, forceBrowser, useProxy, sessionArtifactId, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_TIMEOUT);
+    }
+
+    /**
+     * Fetch a URL. The API answers within about 85 s; a slower site is handed
+     * off as a job (HTTP 202), which this follows by polling
+     * {@code evadr/jobs/{id}} every {@code pollInterval}, up to {@code pollTimeout},
+     * and returns the job's result.
+     */
+    public FetchResult fetch(String url, boolean forceBrowser, boolean useProxy, String sessionArtifactId,
+                             Duration pollInterval, Duration pollTimeout) {
+        var body = fetchBody(url, forceBrowser, useProxy, sessionArtifactId);
+        HttpTransport.Response resp = t.send("POST", "evadr/fetch", body, null);
+        if (resp.status() == 202 && resp.body().get("job_id") instanceof String jobId) {
+            return followJob(jobId, pollInterval, pollTimeout);
+        }
+        return parseFetchResult(resp.body());
+    }
+
+    private static HashMap<String, Object> fetchBody(String url, boolean forceBrowser, boolean useProxy,
+                                                      String sessionArtifactId) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (forceBrowser) body.put("force_browser", true);
         if (useProxy) body.put("use_proxy", true);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
-        return parseFetchResult(t.post("evadr/fetch", body));
+        return body;
+    }
+
+    /** Poll a fetch job until it completes (its result) or fails (ApiException). */
+    @SuppressWarnings("unchecked")
+    public FetchResult followJob(String jobId, Duration pollInterval, Duration pollTimeout) {
+        long deadline = System.nanoTime() + pollTimeout.toNanos();
+        while (true) {
+            try {
+                Thread.sleep(pollInterval.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new KloakdException(0, "Interrupted while following job " + jobId);
+            }
+            Map<String, Object> job = t.get("evadr/jobs/" + jobId, null);
+            String status = str(job, "status");
+            if ("completed".equals(status)) {
+                Object result = job.get("result");
+                return parseFetchResult(result instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
+            }
+            if ("failed".equals(status)) {
+                String error = str(job, "error");
+                throw new ApiException(200, error != null ? error : "fetch job failed", "job_failed");
+            }
+            if (System.nanoTime() > deadline) {
+                throw new ApiException(0, "fetch job " + jobId + " still running after " + pollTimeout, "job_timeout");
+            }
+        }
+    }
+
+    /** Start an asynchronous fetch and return its job ID. */
+    public String startFetchJob(String url, boolean forceBrowser, boolean useProxy,
+                                String sessionArtifactId, String webhookUrl) {
+        var body = fetchBody(url, forceBrowser, useProxy, sessionArtifactId);
+        if (webhookUrl != null) body.put("webhook_url", webhookUrl);
+        return str(t.post("evadr/fetch/async", body), "job_id");
     }
 
     public CompletableFuture<FetchResult> fetchAsync(String url) {
         return fetchAsync(url, false, false, null);
     }
 
+    /**
+     * Start an asynchronous fetch job and complete with its result (polled on
+     * a background thread). Use {@link #startFetchJob} for the job ID alone.
+     */
     public CompletableFuture<FetchResult> fetchAsync(
             String url, boolean forceBrowser, boolean useProxy, String webhookUrl) {
-        var body = new HashMap<String, Object>();
-        body.put("url", url);
-        if (forceBrowser) body.put("force_browser", true);
-        if (useProxy) body.put("use_proxy", true);
-        if (webhookUrl != null) body.put("webhook_url", webhookUrl);
-        return t.postAsync("evadr/fetch/async", body, EvadrNamespace::parseFetchResult);
+        return fetchAsync(url, forceBrowser, useProxy, webhookUrl, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_TIMEOUT);
+    }
+
+    public CompletableFuture<FetchResult> fetchAsync(
+            String url, boolean forceBrowser, boolean useProxy, String webhookUrl,
+            Duration pollInterval, Duration pollTimeout) {
+        return CompletableFuture.supplyAsync(() -> followJob(
+                startFetchJob(url, forceBrowser, useProxy, null, webhookUrl), pollInterval, pollTimeout));
     }
 
     public Stream<FetchEvent> fetchStream(String url) {
         return fetchStream(url, false);
     }
 
+    /**
+     * Start an asynchronous fetch and stream its events
+     * ({@code GET evadr/jobs/{id}/events}); there is no POST stream route.
+     */
     public Stream<FetchEvent> fetchStream(String url, boolean forceBrowser) {
-        var body = new HashMap<String, Object>();
-        body.put("url", url);
-        if (forceBrowser) body.put("force_browser", true);
-        return t.stream("evadr/fetch/stream", body)
-                .map(EvadrNamespace::parseFetchEvent);
+        String jobId = startFetchJob(url, forceBrowser, false, null, null);
+        return jobEvents(jobId).map(EvadrNamespace::parseFetchEvent);
     }
 
     // ── Analyze ───────────────────────────────────────────────────────────────
@@ -71,20 +143,16 @@ public final class EvadrNamespace {
         return parseAnalyzeResult(t.post("evadr/analyze", body));
     }
 
-    // ── Scan ──────────────────────────────────────────────────────────────────
+    // ── Scan and profile ──────────────────────────────────────────────────────
 
+    /** Fetch a URL once (plain HTTP) and report its anti-bot infrastructure. */
     public Map<String, Object> scan(String url) {
-        return scan(url, 0, null, null);
+        return t.post("evadr/scan", Map.of("url", url));
     }
 
-    public Map<String, Object> scan(String url, int statusCode,
-            Map<String, String> headers, String bodySnippet) {
-        var body = new HashMap<String, Object>();
-        body.put("url", url);
-        if (statusCode > 0) body.put("status_code", statusCode);
-        if (headers != null && !headers.isEmpty()) body.put("headers", headers);
-        if (bodySnippet != null) body.put("body_snippet", bodySnippet);
-        return t.post("evadr/scan", body);
+    /** Analyse a URL and return its canonical site profile. */
+    public Map<String, Object> profile(String url) {
+        return t.post("evadr/profile", Map.of("url", url));
     }
 
     // ── Job polling ──────────────────────────────────────────────────────────
@@ -93,8 +161,9 @@ public final class EvadrNamespace {
         return t.get("evadr/jobs/" + jobId, null);
     }
 
-    public Map<String, Object> getJobEvents(String jobId) {
-        return t.get("evadr/jobs/" + jobId + "/events", null);
+    /** Stream an async fetch job's events (SSE); close the stream to stop. */
+    public Stream<Map<String, Object>> jobEvents(String jobId) {
+        return t.getStream("evadr/jobs/" + jobId + "/events", null);
     }
 
     // ── Vendors and profiles ─────────────────────────────────────────────────

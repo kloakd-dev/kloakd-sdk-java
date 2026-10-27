@@ -1,129 +1,72 @@
 package dev.kloakd.sdk.modules;
 
 import dev.kloakd.sdk.http.HttpTransport;
-import dev.kloakd.sdk.models.*;
 
-import java.util.*;
-import java.util.stream.Stream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import static dev.kloakd.sdk.modules.EvadrNamespace.*;
-
-/** API Discovery module. Access via {@code client.skanyr()}. */
+/**
+ * Site Knowledge module: synced sites, their resources, extraction and
+ * search. Access via {@code client.skanyr()}.
+ *
+ * <p>In 0.3.0 the discovery methods of 0.2 ({@code discover}, {@code discoverAll},
+ * {@code discoverStream}, {@code analyzeBundle}, {@code hierarchy}, {@code expandNode},
+ * {@code retry}, {@code health}, {@code getApiMap}, {@code getJob}, {@code getDiscovery*})
+ * are removed: the API no longer serves those routes. The session, detected-API
+ * and reader-view methods moved to {@code client.webgrph()}.
+ */
 public final class SkanyrNamespace {
 
     private final HttpTransport t;
 
     public SkanyrNamespace(HttpTransport t) { this.t = t; }
 
-    public DiscoverResult discover(String url) {
-        return discover(url, null, 0, null, 0, 0);
+    /** The organisation's synced sites, under {@code "items"}. */
+    public Map<String, Object> listSites() { return t.get("skanyr/sites", null); }
+
+    /** Register a site from a finished Webgrph crawl. */
+    public Map<String, Object> createSiteFromCrawl(String crawlId) {
+        return t.post("skanyr/sites/from-crawl/" + crawlId, null);
     }
 
-    public DiscoverResult discover(String url, String siteHierarchyArtifactId,
-            int maxRequests, String sessionArtifactId, int limit, int offset) {
+    public Map<String, Object> getSite(String siteId) { return t.get("skanyr/sites/" + siteId, null); }
+
+    public Map<String, Object> setSitePolicy(String siteId, String policy) {
+        return t.patch("skanyr/sites/" + siteId, Map.of("policy", policy));
+    }
+
+    public void deleteSite(String siteId) { t.delete("skanyr/sites/" + siteId); }
+
+    public Map<String, Object> siteResources(String siteId) { return t.get("skanyr/sites/" + siteId + "/resources", null); }
+
+    public Map<String, Object> siteApis(String siteId) { return t.get("skanyr/sites/" + siteId + "/apis", null); }
+
+    /** Re-fetch a site's changed resources ({@code urls} and {@code policy} may be null). */
+    public Map<String, Object> sync(String siteId, List<String> urls, String policy) {
         var body = new HashMap<String, Object>();
-        body.put("url", url);
-        if (siteHierarchyArtifactId != null) body.put("site_hierarchy_artifact_id", siteHierarchyArtifactId);
-        if (maxRequests > 0) body.put("max_requests", maxRequests);
-        if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
+        body.put("site_id", siteId);
+        if (urls != null && !urls.isEmpty()) body.put("urls", urls);
+        if (policy != null) body.put("policy", policy);
+        return t.post("skanyr/sync", body);
+    }
+
+    /** Search extracted content ({@code siteId} may be null; limit/offset 0 for the defaults). */
+    public Map<String, Object> search(String query, String siteId, int limit, int offset) {
+        var body = new HashMap<String, Object>();
+        body.put("query", query);
+        if (siteId != null) body.put("site_id", siteId);
         if (limit > 0) body.put("limit", limit);
         if (offset > 0) body.put("offset", offset);
-        return parseDiscoverResult(t.post("skanyr/discover", body));
+        return t.post("skanyr/search", body);
     }
 
-    public List<ApiEndpoint> discoverAll(String url) {
-        int limit = 100, offset = 0;
-        var all = new ArrayList<ApiEndpoint>();
-        while (true) {
-            var result = discover(url, null, 0, null, limit, offset);
-            all.addAll(result.endpoints());
-            if (!result.hasMore()) break;
-            offset += result.endpoints().size();
-        }
-        return Collections.unmodifiableList(all);
-    }
-
-    public Stream<DiscoverEvent> discoverStream(String url) {
-        return discoverStream(url, null, 0);
-    }
-
-    public Stream<DiscoverEvent> discoverStream(String url, String siteHierarchyArtifactId, int maxRequests) {
+    /** Extract text and structure from stored content. */
+    public Map<String, Object> extract(String contentHash, String mimeType, Map<String, Object> metadata) {
         var body = new HashMap<String, Object>();
-        body.put("url", url);
-        if (siteHierarchyArtifactId != null) body.put("site_hierarchy_artifact_id", siteHierarchyArtifactId);
-        if (maxRequests > 0) body.put("max_requests", maxRequests);
-        return t.stream("skanyr/discover/stream", body)
-                .map(SkanyrNamespace::parseDiscoverEvent);
-    }
-
-    // ── Discovery polling ──────────────────────────────────────────────────────
-
-    public Map<String, Object> getDiscovery(String discoveryId) { return t.get("skanyr/discover/" + discoveryId, null); }
-    public Map<String, Object> getDiscoveryEvents(String discoveryId) { return t.get("skanyr/discover/" + discoveryId + "/events", null); }
-
-    // ── Analysis and detection ───────────────────────────────────────────────
-
-    public Map<String, Object> analyzeBundle(String url) { return t.post("skanyr/analyze-bundle", Map.of("url", url)); }
-    public Map<String, Object> discoverPageLive(String url) { return t.post("skanyr/discover-page/live", Map.of("url", url)); }
-    public Map<String, Object> detectedApis(String pageUrl) { return t.get("skanyr/detected-apis", Map.of("page_url", pageUrl)); }
-    public Map<String, Object> hierarchy(String url) { return t.post("skanyr/hierarchy", Map.of("url", url)); }
-    public Map<String, Object> expandNode(String nodeId) { return t.post("skanyr/expand-node", Map.of("node_id", nodeId)); }
-    public Map<String, Object> readerView(String url) { return t.post("skanyr/reader-view", Map.of("url", url)); }
-
-    public Map<String, Object> retry(String discoveryId, Map<String, Object> overrides) {
-        var body = new HashMap<String, Object>();
-        body.put("discovery_id", discoveryId);
-        if (overrides != null) body.putAll(overrides);
-        return t.post("skanyr/retry", body);
-    }
-
-    public Map<String, Object> health() { return t.get("skanyr/health", null); }
-
-    // ── Session management ───────────────────────────────────────────────────
-
-    public Map<String, Object> listSessions() { return t.get("skanyr/sessions", null); }
-    public Map<String, Object> saveSession(Map<String, Object> config) { return t.post("skanyr/sessions", config); }
-    public Map<String, Object> getSession(String sessionId) { return t.get("skanyr/sessions/" + sessionId, null); }
-    public void deleteSession(String sessionId) { t.delete("skanyr/sessions/" + sessionId); }
-    public Map<String, Object> endSession(String sessionId) { return t.post("skanyr/sessions/" + sessionId + "/end", Map.of()); }
-    public Map<String, Object> updateSessionJob(String sessionId, String jobId) { return t.patch("skanyr/sessions/" + sessionId + "/job", Map.of("job_id", jobId)); }
-
-    // ── Artifacts ────────────────────────────────────────────────────────────
-
-    public Map<String, Object> getApiMap(String artifactId) {
-        return t.get("skanyr/api-map/" + artifactId, null);
-    }
-
-    public Map<String, Object> getJob(String jobId) {
-        return t.get("skanyr/jobs/" + jobId, null);
-    }
-
-    static DiscoverResult parseDiscoverResult(Map<String, Object> m) {
-        var endpoints = new ArrayList<ApiEndpoint>();
-        var raw = m.get("endpoints");
-        if (raw instanceof List<?> list) {
-            for (var item : list) {
-                if (item instanceof Map<?,?> em) {
-                    @SuppressWarnings("unchecked")
-                    var em2 = (Map<String, Object>) em;
-                    endpoints.add(parseApiEndpoint(em2));
-                }
-            }
-        }
-        return new DiscoverResult(
-                bool(m, "success"), str(m, "discovery_id"), str(m, "url"),
-                integer(m, "total_endpoints"), Collections.unmodifiableList(endpoints),
-                bool(m, "has_more"), integer(m, "total"),
-                str(m, "artifact_id"), str(m, "error"));
-    }
-
-    static ApiEndpoint parseApiEndpoint(Map<String, Object> m) {
-        return new ApiEndpoint(str(m, "url"), str(m, "method"), str(m, "api_type"),
-                dbl(m, "confidence"), mapField(m, "parameters"));
-    }
-
-    static DiscoverEvent parseDiscoverEvent(Map<String, Object> m) {
-        return new DiscoverEvent(str(m, "type"), str(m, "endpoint_url"),
-                str(m, "api_type"), mapField(m, "metadata"));
+        body.put("content_hash", contentHash);
+        body.put("mime_type", mimeType);
+        if (metadata != null && !metadata.isEmpty()) body.put("metadata", metadata);
+        return t.post("skanyr/extract", body);
     }
 }

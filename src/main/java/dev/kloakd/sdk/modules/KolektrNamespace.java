@@ -14,46 +14,43 @@ public final class KolektrNamespace {
 
     public KolektrNamespace(HttpTransport t) { this.t = t; }
 
-    public ExtractionResult page(String url) {
-        return page(url, null, null, null, null, 0, 0);
+    /** Extract structured data from a URL with the full Kolektr pipeline. */
+    public ExtractionResult extract(String url) {
+        return extract(url, null, null, null, null);
     }
 
-    public ExtractionResult page(String url, Map<String, Object> schema,
-            String fetchArtifactId, String sessionArtifactId,
-            String apiMapArtifactId, int limit, int offset) {
+    /**
+     * Extract structured data from a URL ({@code POST kolektr/extract}).
+     *
+     * @param schemaSpec the fields to extract (sent as {@code schema_spec}), or null
+     */
+    public ExtractionResult extract(String url, Map<String, Object> schemaSpec,
+            String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
-        if (schema != null && !schema.isEmpty()) body.put("schema", schema);
+        if (schemaSpec != null && !schemaSpec.isEmpty()) body.put("schema_spec", schemaSpec);
         if (fetchArtifactId != null) body.put("fetch_artifact_id", fetchArtifactId);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
         if (apiMapArtifactId != null) body.put("api_map_artifact_id", apiMapArtifactId);
-        if (limit > 0) body.put("limit", limit);
-        if (offset > 0) body.put("offset", offset);
-        return parseExtractionResult(t.post("kolektr/page", body));
+        return parseExtractionResult(t.post("kolektr/extract", body));
     }
 
-    public List<Map<String, Object>> pageAll(String url, Map<String, Object> schema) {
-        int limit = 100, offset = 0;
-        var all = new ArrayList<Map<String, Object>>();
-        while (true) {
-            var result = page(url, schema, null, null, null, limit, offset);
-            all.addAll(result.records());
-            if (!result.hasMore()) break;
-            offset += result.records().size();
-        }
-        return Collections.unmodifiableList(all);
+    /** @deprecated use {@link #extract(String)}. */
+    @Deprecated
+    public ExtractionResult page(String url) {
+        return extract(url);
     }
 
     public ExtractionResult extractHtml(String html, String url) {
         return extractHtml(html, url, null);
     }
 
-    public ExtractionResult extractHtml(String html, String url, Map<String, Object> schema) {
+    public ExtractionResult extractHtml(String html, String url, Map<String, Object> schemaSpec) {
         var body = new HashMap<String, Object>();
         body.put("html", html);
         body.put("url", url);
-        if (schema != null && !schema.isEmpty()) body.put("schema", schema);
-        return parseExtractionResult(t.post("kolektr/extract-html", body));
+        if (schemaSpec != null && !schemaSpec.isEmpty()) body.put("schema_spec", schemaSpec);
+        return parseExtractionResult(t.post("kolektr/extract/html", body));
     }
 
     // ── API data ──────────────────────────────────────────────────────────────
@@ -107,7 +104,7 @@ public final class KolektrNamespace {
         return new ExtractionResult(
                 bool(m, "success"), str(m, "url"), str(m, "method"),
                 mapList(m, "records"), integer(m, "total_records"),
-                integer(m, "pages_scraped"), bool(m, "has_more"), integer(m, "total"),
+                integer(m, "pages_scraped"),
                 nestedArtifactId(m), str(m, "job_id"), str(m, "error"));
     }
 }

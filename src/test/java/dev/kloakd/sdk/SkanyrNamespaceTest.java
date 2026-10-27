@@ -13,10 +13,12 @@ class SkanyrNamespaceTest {
 
     private MockWebServer server;
     private Kloakd client;
+    private Routes routes;
 
     @BeforeEach
     void setUp() throws Exception {
         server = startServer();
+        routes = routes(server);
         client = client(server);
     }
 
@@ -25,77 +27,22 @@ class SkanyrNamespaceTest {
         server.shutdown();
     }
 
-    Map<String, Object> discoverResponse() {
-        return Map.of(
-                "success", true, "discovery_id", "d-001",
-                "url", "https://api.example.com", "total_endpoints", 2,
-                "endpoints", List.of(
-                        Map.of("url", "https://api.example.com/users",
-                                "method", "GET", "api_type", "rest",
-                                "confidence", 0.98, "parameters", Map.of())),
-                "has_more", false, "total", 2, "artifact_id", "art-d-001");
-    }
-
     @Test
-    void discover_parsesResult() {
-        enqueue(server, 200, discoverResponse());
-        var result = client.skanyr().discover("https://api.example.com");
+    void sitesSyncSearch_useTheLiveRoutes() {
+        routes.json("GET skanyr/sites", 200, List.of(Map.of("site_id", "s1")));
+        routes.json("POST skanyr/sync", 200, Map.of("site_id", "s1", "sync_id", "y1", "policy", "changed"));
+        routes.json("POST skanyr/search", 200, Map.of("results", List.of()));
+        routes.json("PATCH skanyr/sites/s1", 200, Map.of("site_id", "s1", "policy", "full"));
+        routes.json("DELETE skanyr/sites/s1", 200, Map.of("site_id", "s1", "deleted", true));
 
-        assertTrue(result.success());
-        assertEquals("d-001", result.discoveryId());
-        assertEquals(2, result.totalEndpoints());
-        assertEquals(1, result.endpoints().size());
-        assertEquals("rest", result.endpoints().get(0).apiType());
-    }
+        assertEquals(1, ((List<?>) client.skanyr().listSites().get("items")).size());
+        assertEquals("y1", client.skanyr().sync("s1", null, "changed").get("sync_id"));
+        client.skanyr().search("pricing", "s1", 5, 0);
+        client.skanyr().setSitePolicy("s1", "full");
+        client.skanyr().deleteSite("s1");
 
-    @Test
-    void discover_sendsSiteHierarchyArtifact() throws Exception {
-        enqueue(server, 200, discoverResponse());
-        client.skanyr().discover("https://api.example.com", "hier-001", 0, null, 0, 0);
-
-        assertEquals("hier-001", requestBody(server.takeRequest()).get("site_hierarchy_artifact_id"));
-    }
-
-    @Test
-    void discoverAll_singlePage() {
-        enqueue(server, 200, discoverResponse());
-        var endpoints = client.skanyr().discoverAll("https://api.example.com");
-        assertEquals(1, endpoints.size());
-    }
-
-    @Test
-    void discoverStream_yieldsEvents() {
-        enqueueSse(server,
-                Map.of("type", "endpoint_found", "endpoint_url", "https://api.example.com/v1",
-                        "api_type", "rest", "metadata", Map.of()),
-                Map.of("type", "complete", "metadata", Map.of()));
-
-        var events = client.skanyr().discoverStream("https://api.example.com").toList();
-
-        assertEquals(2, events.size());
-        assertEquals("endpoint_found", events.get(0).type());
-        assertEquals("https://api.example.com/v1", events.get(0).endpointUrl());
-    }
-
-    @Test
-    void discoverStream_sendsSiteHierarchyArtifact() throws Exception {
-        enqueueSse(server, Map.of("type", "complete", "metadata", Map.of()));
-        client.skanyr().discoverStream("https://api.example.com", "hier-001", 0).toList();
-
-        assertEquals("hier-001", requestBody(server.takeRequest()).get("site_hierarchy_artifact_id"));
-    }
-
-    @Test
-    void getApiMap_urlContainsId() throws Exception {
-        enqueue(server, 200, Map.of("artifact_id", "art-d-001"));
-        client.skanyr().getApiMap("art-d-001");
-        assertTrue(server.takeRequest().getPath().contains("art-d-001"));
-    }
-
-    @Test
-    void getJob_urlContainsId() throws Exception {
-        enqueue(server, 200, Map.of("status", "completed"));
-        client.skanyr().getJob("job-d-001");
-        assertTrue(server.takeRequest().getPath().contains("job-d-001"));
+        assertEquals("s1", routes.bodies.get("POST skanyr/search").get("site_id"));
+        assertEquals("changed", routes.bodies.get("POST skanyr/sync").get("policy"));
+        assertEquals(5, routes.seen.size());
     }
 }

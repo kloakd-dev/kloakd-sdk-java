@@ -81,6 +81,71 @@ public final class TestHelpers {
         return server;
     }
 
+    /**
+     * A dispatcher answering by "METHOD path-after-org-prefix" (query ignored);
+     * each route's responses are served in order, the last one repeating.
+     * Unknown routes get 404. {@link #seen} records every request.
+     */
+    public static final class Routes extends okhttp3.mockwebserver.Dispatcher {
+        private final Map<String, java.util.List<MockResponse>> routes = new java.util.concurrent.ConcurrentHashMap<>();
+        public final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        public final Map<String, Map<String, Object>> bodies = new java.util.concurrent.ConcurrentHashMap<>();
+
+        public Routes json(String route, int status, Object body) {
+            try {
+                return add(route, new MockResponse().setResponseCode(status)
+                        .addHeader("Content-Type", "application/json")
+                        .setBody(MAPPER.writeValueAsString(body)));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public Routes sse(String route, Map<String, Object>... payloads) {
+            var sb = new StringBuilder();
+            for (var p : payloads) {
+                try {
+                    sb.append("data: ").append(MAPPER.writeValueAsString(p)).append("\n\n");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            return add(route, new MockResponse().setResponseCode(200)
+                    .addHeader("Content-Type", "text/event-stream").setBody(sb.toString()));
+        }
+
+        public Routes add(String route, MockResponse response) {
+            routes.computeIfAbsent(route, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(response);
+            return this;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public MockResponse dispatch(okhttp3.mockwebserver.RecordedRequest request) {
+            String path = request.getPath() == null ? "" : request.getPath().split("\\?")[0];
+            String key = request.getMethod() + " " + path.replaceFirst("^/api/v1/organizations/" + TEST_ORG_ID + "/", "");
+            seen.add(key);
+            String raw = request.getBody().readUtf8();
+            try {
+                bodies.put(key, raw.isEmpty() ? Map.of() : MAPPER.readValue(raw, Map.class));
+            } catch (Exception ignored) {
+                bodies.put(key, Map.of());
+            }
+            var list = routes.get(key);
+            if (list == null || list.isEmpty()) {
+                return new MockResponse().setResponseCode(404).setBody("{\"detail\":\"Not Found\"}");
+            }
+            return list.size() > 1 ? list.remove(0) : list.get(0);
+        }
+    }
+
+    /** Point a server at a route dispatcher and return it. */
+    public static Routes routes(MockWebServer server) {
+        var r = new Routes();
+        server.setDispatcher(r);
+        return r;
+    }
+
     /** Parse a recorded request body as Map. */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> requestBody(okhttp3.mockwebserver.RecordedRequest req) {

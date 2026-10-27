@@ -29,14 +29,14 @@ public class Quickstart {
         System.out.printf("Fetched via tier %d, anti-bot bypassed=%b%n",
                 fetch.tierUsed(), fetch.antiBotBypassed());
 
-        // Step 2: Site hierarchy (reuse Evadr artifact)
-        var crawl = client.webgrph().crawl(targetUrl, 2, 50, false, fetch.artifactId(), 0, 0);
+        // Step 2: Site hierarchy (crawl() waits for the crawl and returns its pages)
+        var crawl = client.webgrph().crawl(targetUrl, 2, 50, false, null);
         System.out.printf("Found %d pages%n", crawl.totalPages());
 
         // Step 3: Extract structured data (reuse Evadr artifact)
-        var data = client.kolektr().page(targetUrl,
+        var data = client.kolektr().extract(targetUrl,
                 Map.of("title", "css:h3 a", "price", "css:p.price_color"),
-                fetch.artifactId(), null, null, 0, 0);
+                fetch.artifactId(), null, null);
         System.out.printf("Extracted %d records%n", data.totalRecords());
 
         data.records().stream().limit(3).forEach(System.out::println);
