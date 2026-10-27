@@ -5,6 +5,12 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-10-28
+
+The 0.3.0 release build stopped at its Javadoc step (`@param hasMore` on
+`ExtractionResult`, a field the record does not have), so 0.3.0 never reached
+Maven Central. 0.3.1 is 0.3.0 with that comment corrected.
+
 ## [0.3.0] — 2026-10-27
 
 Every call now targets a live API route (`ROUTES.md`; `LiveRoutesTest`
