@@ -36,9 +36,16 @@ import java.util.stream.StreamSupport;
  */
 public class HttpTransport {
 
-    static final String SDK_VERSION = "0.3.1";
+    static final String SDK_VERSION = "0.4.0";
     private static final Set<Integer> RETRYABLE = Set.of(429, 500, 502, 503, 504);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** Default first wait before polling a handed-off request (HTTP 202). */
+    public static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
+    /** Default limit on following a handed-off request. */
+    public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMinutes(15);
+    /** Each wait between polls is 1.5 times the last, up to this. */
+    public static final Duration MAX_POLL_INTERVAL = Duration.ofSeconds(15);
 
     private final String apiKey;
     private final String organizationId;
@@ -46,6 +53,8 @@ public class HttpTransport {
     private final int maxRetries;
     private final Duration timeout;
     private final HttpClient httpClient;
+    private final Duration pollInterval;
+    private final Duration pollTimeout;
 
     public HttpTransport(
             String apiKey,
@@ -54,6 +63,22 @@ public class HttpTransport {
             Duration timeout,
             int maxRetries,
             HttpClient httpClient) {
+        this(apiKey, organizationId, baseUrl, timeout, maxRetries, httpClient, null, null);
+    }
+
+    /**
+     * @param pollInterval first wait before polling a handed-off request, or null for the default
+     * @param pollTimeout  limit on following a handed-off request, or null for the default
+     */
+    public HttpTransport(
+            String apiKey,
+            String organizationId,
+            String baseUrl,
+            Duration timeout,
+            int maxRetries,
+            HttpClient httpClient,
+            Duration pollInterval,
+            Duration pollTimeout) {
         this.apiKey = apiKey;
         this.organizationId = organizationId;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
@@ -61,7 +86,13 @@ public class HttpTransport {
         this.timeout = timeout;
         this.httpClient = httpClient != null ? httpClient :
                 HttpClient.newBuilder().connectTimeout(timeout).build();
+        this.pollInterval = pollInterval != null ? pollInterval : DEFAULT_POLL_INTERVAL;
+        this.pollTimeout = pollTimeout != null ? pollTimeout : DEFAULT_POLL_TIMEOUT;
     }
+
+    public Duration pollInterval() { return pollInterval; }
+
+    public Duration pollTimeout() { return pollTimeout; }
 
     // ── URL building ──────────────────────────────────────────────────────────
 
@@ -121,7 +152,21 @@ public class HttpTransport {
             Map<String, Object> body,
             Map<String, String> params) {
 
-        String url = buildUrl(path, params);
+        return sendTo(method, buildUrl(path, params), body);
+    }
+
+    /**
+     * Resolve a URL the API returned: a full URL as is, an absolute path
+     * ({@code /api/v1/...}) against the base URL's origin, anything else
+     * relative to the organisation prefix.
+     */
+    public String resolveUrl(String pathOrUrl) {
+        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl;
+        if (pathOrUrl.startsWith("/")) return URI.create(baseUrl + "/").resolve(pathOrUrl).toString();
+        return buildUrl(pathOrUrl, null);
+    }
+
+    private Response sendTo(String method, String url, Map<String, Object> body) {
         byte[] bodyBytes = serialise(body);
         KloakdException lastException = null;
 
@@ -182,6 +227,74 @@ public class HttpTransport {
 
     public void delete(String path) {
         request("DELETE", path, null, null);
+    }
+
+    // ── 202 hand-off ──────────────────────────────────────────────────────────
+
+    /**
+     * POST to a route that may hand the request off as a job: the API
+     * answers within about 85 s, and a request still running then gets
+     * HTTP 202 with {@code job_id} and {@code poll_url}. This follows the
+     * hand-off ({@link #followHandOff}) with the client's poll settings and
+     * returns the route's own response body either way.
+     */
+    public Map<String, Object> postFollowing(String path, Map<String, Object> body) {
+        return postFollowing(path, body, pollInterval, pollTimeout);
+    }
+
+    /** {@link #postFollowing(String, Map)} with this call's poll settings. */
+    public Map<String, Object> postFollowing(String path, Map<String, Object> body,
+                                             Duration interval, Duration limit) {
+        Response resp = send("POST", path, body, null);
+        if (resp.status() == 202 && resp.body().get("job_id") instanceof String jobId) {
+            String pollUrl = resp.body().get("poll_url") instanceof String p && !p.isBlank()
+                    ? p : "handoff/" + jobId;
+            return followHandOff(jobId, pollUrl, interval, limit);
+        }
+        return resp.body();
+    }
+
+    /**
+     * Poll a handed-off request's {@code pollUrl} until it ends. Waits
+     * {@code interval} before the first poll, then 1.5 times longer each
+     * time, at most {@link #MAX_POLL_INTERVAL}.
+     *
+     * @return the job's {@code result}: the body the route would have answered with
+     * @throws JobFailedException  the job failed, or the API no longer knows it (404: expired)
+     * @throws JobTimeoutException still running after {@code limit}
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> followHandOff(String jobId, String pollUrl, Duration interval, Duration limit) {
+        String url = resolveUrl(pollUrl);
+        long deadline = System.nanoTime() + limit.toNanos();
+        long waitMs = Math.max(0, interval.toMillis());
+        while (true) {
+            try {
+                sleep(waitMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new KloakdException(0, "Interrupted while following job " + jobId);
+            }
+            Map<String, Object> job;
+            try {
+                job = sendTo("GET", url, null).body();
+            } catch (ApiException e) {
+                if (e.getStatusCode() != 404) throw e;
+                throw new JobFailedException("Job " + jobId + " not found or expired: " + e.getMessage(), jobId);
+            }
+            Object status = job.get("status");
+            if ("completed".equals(status)) {
+                return job.get("result") instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+            }
+            if ("failed".equals(status)) {
+                Object error = job.get("error");
+                throw new JobFailedException(error != null ? String.valueOf(error) : "Job " + jobId + " failed", jobId);
+            }
+            waitMs = Math.min(Math.max(1, waitMs * 3 / 2), MAX_POLL_INTERVAL.toMillis());
+            if (System.nanoTime() + waitMs * 1_000_000L > deadline) {
+                throw new JobTimeoutException("Job " + jobId + " still running after " + limit, jobId);
+            }
+        }
     }
 
     // ── Async request ─────────────────────────────────────────────────────────

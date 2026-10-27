@@ -20,7 +20,12 @@ public final class KolektrNamespace {
     }
 
     /**
-     * Extract structured data from a URL ({@code POST kolektr/extract}).
+     * Extract structured data from a URL ({@code POST kolektr/extract}). The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}.
      *
      * @param schemaSpec the fields to extract (sent as {@code schema_spec}), or null
      */
@@ -32,7 +37,7 @@ public final class KolektrNamespace {
         if (fetchArtifactId != null) body.put("fetch_artifact_id", fetchArtifactId);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
         if (apiMapArtifactId != null) body.put("api_map_artifact_id", apiMapArtifactId);
-        return parseExtractionResult(t.post("kolektr/extract", body));
+        return parseExtractionResult(t.postFollowing("kolektr/extract", body));
     }
 
     /** @deprecated use {@link #extract(String)}. */
@@ -70,7 +75,6 @@ public final class KolektrNamespace {
     // ── Jobs ─────────────────────────────────────────────────────────────────
 
     public Map<String, Object> listJobs() { return t.get("kolektr/jobs", null); }
-    public Map<String, Object> createJob(Map<String, Object> config) { return t.post("kolektr/jobs", config); }
     public Map<String, Object> getJob(String jobId) { return t.get("kolektr/jobs/" + jobId, null); }
     public Map<String, Object> getJobStatus(String jobId) { return t.get("kolektr/extraction-jobs/" + jobId + "/status", null); }
     public Map<String, Object> getJobProgress(String jobId) { return t.get("kolektr/jobs/" + jobId + "/progress", null); }

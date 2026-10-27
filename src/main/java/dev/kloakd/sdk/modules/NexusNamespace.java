@@ -15,7 +15,14 @@ public final class NexusNamespace {
 
     public NexusNamespace(HttpTransport t) { this.t = t; }
 
-    /** Classify a page and propose a strategy. The API needs the page's HTML. */
+    /**
+     * Classify a page and propose a strategy. The API needs the page's HTML. The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}.
+     */
     public NexusAnalyzeResult analyze(String url, String html) {
         return analyze(url, html, null);
     }
@@ -25,12 +32,17 @@ public final class NexusNamespace {
         body.put("url", url);
         body.put("html", html);
         if (constraints != null && !constraints.isEmpty()) body.put("constraints", constraints);
-        return parseNexusAnalyzeResult(t.post("nexus/analyze", body));
+        return parseNexusAnalyzeResult(t.postFollowing("nexus/analyze", body));
     }
 
-    /** Generate an extraction program for a page and a goal. */
+    /** Generate an extraction program for a page and a goal. The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}. */
     public NexusSynthesisResult synthesize(String url, String html, String goal) {
-        return parseNexusSynthesisResult(t.post("nexus/synthesize", Map.of("url", url, "html", html, "goal", goal)));
+        return parseNexusSynthesisResult(t.postFollowing("nexus/synthesize", Map.of("url", url, "html", html, "goal", goal)));
     }
 
     public NexusVerifyResult verify(String strategyId) {
@@ -41,14 +53,30 @@ public final class NexusNamespace {
         return execute(strategyId, url, null);
     }
 
+    /**
+     * Run a verified strategy on a URL and return the extracted records. The
+     * result's {@link NexusExecuteResult#executionResultId()} is the id to pass
+     * to {@link #knowledge(String)}. The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}.
+     */
     public NexusExecuteResult execute(String strategyId, String url, Map<String, Object> options) {
         var body = new HashMap<String, Object>();
         body.put("strategy_id", strategyId);
         body.put("url", url);
         if (options != null && !options.isEmpty()) body.put("options", options);
-        return parseNexusExecuteResult(t.post("nexus/execute", body));
+        return parseNexusExecuteResult(t.postFollowing("nexus/execute", body));
     }
 
+    /**
+     * Learn concepts and patterns from a prior execution.
+     *
+     * @param executionResultId {@link NexusExecuteResult#executionResultId()} from
+     *                          {@link #execute(String, String, Map)}'s result
+     */
     public NexusKnowledgeResult knowledge(String executionResultId) {
         return parseNexusKnowledgeResult(t.post("nexus/knowledge",
                 Map.of("execution_result_id", executionResultId)));
@@ -57,26 +85,6 @@ public final class NexusNamespace {
     // ── Reason ───────────────────────────────────────────────────────────────
 
     public Map<String, Object> reason(Map<String, Object> context) { return t.post("nexus/reason", context); }
-
-    // ── Recommendations ──────────────────────────────────────────────────────
-
-    public Map<String, Object> recommendAnalyze(Map<String, Object> data) { return t.post("nexus/recommendations/analyze", data); }
-    public Map<String, Object> listRecommendationApplications() { return t.get("nexus/recommendations/applications", null); }
-
-    public Map<String, Object> getCacheStatistics() { return t.get("nexus/recommendations/cache/statistics", null); }
-    public Map<String, Object> cleanupCache() { return t.post("nexus/recommendations/cache/cleanup", Map.of()); }
-    public Map<String, Object> invalidateCache() { return t.post("nexus/recommendations/cache/invalidate", Map.of()); }
-
-    public Map<String, Object> getHooksStatus() { return t.get("nexus/recommendations/hooks/status", null); }
-    public Map<String, Object> enableHook(String hookName) { return t.post("nexus/recommendations/hooks/" + hookName + "/enable", Map.of()); }
-    public Map<String, Object> disableHook(String hookName) { return t.post("nexus/recommendations/hooks/" + hookName + "/disable", Map.of()); }
-
-    public Map<String, Object> createPreference(Map<String, Object> preference) { return t.post("nexus/recommendations/preferences", preference); }
-    public Map<String, Object> getPreferences(String userId) { return t.get("nexus/recommendations/preferences/" + userId, null); }
-    public Map<String, Object> updatePreference(String preferenceId, Map<String, Object> data) { return t.put("nexus/recommendations/preferences/" + preferenceId, data); }
-    public void deletePreference(String preferenceId) { t.delete("nexus/recommendations/preferences/" + preferenceId); }
-
-    public Map<String, Object> getRecommendationStatistics() { return t.get("nexus/recommendations/statistics", null); }
 
     // ── parsers ──────────────────────────────────────────────────────────────
 
@@ -99,7 +107,7 @@ public final class NexusNamespace {
     static NexusExecuteResult parseNexusExecuteResult(Map<String, Object> m) {
         return new NexusExecuteResult(str(m, "strategy_id"), bool(m, "success"),
                 mapList(m, "records"), nestedArtifactId(m),
-                integer(m, "duration_ms"), str(m, "error_message"));
+                integer(m, "duration_ms"), str(m, "error_message"), str(m, "execution_result_id"));
     }
 
     static NexusKnowledgeResult parseNexusKnowledgeResult(Map<String, Object> m) {

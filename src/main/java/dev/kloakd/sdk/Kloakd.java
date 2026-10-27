@@ -44,7 +44,9 @@ public final class Kloakd {
                 baseUrl,
                 timeout,
                 maxRetries,
-                builder.httpClient);
+                builder.httpClient,
+                builder.pollInterval,
+                builder.pollTimeout);
 
         this.evadr   = new EvadrNamespace(transport);
         this.webgrph = new WebgrphNamespace(transport);
@@ -78,55 +80,15 @@ public final class Kloakd {
      * }</pre>
      */
     public SiteCrawlResult crawl(String url, CrawlOptions opts) {
-        int maxDepth = opts.maxDepth() > 0 ? opts.maxDepth() : 3;
-        int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
-
-        var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
-                opts.includeExternalLinks(), opts.sessionArtifactId());
-
+        var crawlResult = discover(url, opts);
         var pages = new ArrayList<CrawlPage>();
         int fetched = 0;
         int failed = 0;
-
         for (var node : crawlResult.pages()) {
-            try {
-                var fetchResult = evadr.fetch(node.url(),
-                        false, false, opts.sessionArtifactId());
-
-                Map<String, Object> structuredData = null;
-                if (opts.extractSchema() != null && !opts.extractSchema().isEmpty()
-                        && fetchResult.success()) {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
-                        var extraction = kolektr.extract(node.url(), schema,
-                                fetchResult.artifactId(), null, null);
-                        if (!extraction.records().isEmpty()) {
-                            structuredData = extraction.records().get(0);
-                        }
-                    } catch (Exception ignored) {
-                        // Extraction failure is non-fatal
-                    }
-                }
-
-                var page = new CrawlPage(
-                        fetchResult.success(),
-                        fetchResult.url(),
-                        fetchResult.statusCode(),
-                        fetchResult.tierUsed(),
-                        fetchResult.html(),
-                        structuredData,
-                        fetchResult.artifactId(),
-                        fetchResult.error()
-                );
-                pages.add(page);
-                if (page.ok()) fetched++; else failed++;
-            } catch (Exception e) {
-                pages.add(new CrawlPage(false, node.url(), 0, 0, null, null, null, e.getMessage()));
-                failed++;
-            }
+            var page = fetchPage(node.url(), opts);
+            pages.add(page);
+            if (page.ok()) fetched++; else failed++;
         }
-
         return new SiteCrawlResult(
                 true, url, crawlResult.totalPages(),
                 fetched, failed, Collections.unmodifiableList(pages),
@@ -139,74 +101,29 @@ public final class Kloakd {
      * stream of {@link CrawlProgressEvent} values as pages are processed.
      */
     public Stream<CrawlProgressEvent> crawlStream(String url, CrawlOptions opts) {
-        int maxDepth = opts.maxDepth() > 0 ? opts.maxDepth() : 3;
-        int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
-
-        var crawlResult = webgrph.crawl(url, maxDepth, maxPages,
-                opts.includeExternalLinks(), opts.sessionArtifactId());
-
+        var crawlResult = discover(url, opts);
         int total = crawlResult.totalPages();
         var events = new ArrayList<CrawlProgressEvent>();
-
         events.add(new CrawlProgressEvent("discovery_complete", url, null, total, null, null,
                 Map.of("pages_found", total)));
 
         int fetched = 0;
         int failed = 0;
         var pages = new ArrayList<CrawlPage>();
-
         for (int i = 0; i < crawlResult.pages().size(); i++) {
             var node = crawlResult.pages().get(i);
             int pageNum = i + 1;
-
             events.add(new CrawlProgressEvent("page_fetching", node.url(), pageNum, total, null, null, Map.of()));
-
-            try {
-                var fetchResult = evadr.fetch(node.url(),
-                        false, false, opts.sessionArtifactId());
-
-                Map<String, Object> structuredData = null;
-                if (opts.extractSchema() != null && !opts.extractSchema().isEmpty()
-                        && fetchResult.success()) {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
-                        var extraction = kolektr.extract(node.url(), schema,
-                                fetchResult.artifactId(), null, null);
-                        if (!extraction.records().isEmpty()) {
-                            structuredData = extraction.records().get(0);
-                        }
-                    } catch (Exception ignored) {
-                        // Extraction failure is non-fatal
-                    }
-                }
-
-                var page = new CrawlPage(
-                        fetchResult.success(),
-                        fetchResult.url(),
-                        fetchResult.statusCode(),
-                        fetchResult.tierUsed(),
-                        fetchResult.html(),
-                        structuredData,
-                        fetchResult.artifactId(),
-                        fetchResult.error()
-                );
-                pages.add(page);
-
-                if (page.ok()) {
-                    fetched++;
-                    events.add(new CrawlProgressEvent("page_fetched", node.url(), pageNum, total,
-                            true, null, Map.of("tier_used", fetchResult.tierUsed())));
-                } else {
-                    failed++;
-                    events.add(new CrawlProgressEvent("page_failed", node.url(), pageNum, total,
-                            false, fetchResult.error(), Map.of()));
-                }
-            } catch (Exception e) {
-                pages.add(new CrawlPage(false, node.url(), 0, 0, null, null, null, e.getMessage()));
+            var page = fetchPage(node.url(), opts);
+            pages.add(page);
+            if (page.ok()) {
+                fetched++;
+                events.add(new CrawlProgressEvent("page_fetched", node.url(), pageNum, total,
+                        true, null, Map.of("tier_used", page.tierUsed())));
+            } else {
                 failed++;
                 events.add(new CrawlProgressEvent("page_failed", node.url(), pageNum, total,
-                        false, e.getMessage(), Map.of()));
+                        false, page.error(), Map.of()));
             }
         }
 
@@ -216,8 +133,39 @@ public final class Kloakd {
         );
         events.add(new CrawlProgressEvent("crawl_complete", url, null, total, true, null,
                 Map.of("result", result)));
-
         return events.stream();
+    }
+
+    private CrawlResult discover(String url, CrawlOptions opts) {
+        int maxDepth = opts.maxDepth() > 0 ? opts.maxDepth() : 3;
+        int maxPages = opts.maxPages() > 0 ? opts.maxPages() : 100;
+        return webgrph.crawl(url, maxDepth, maxPages, opts.includeExternalLinks(), opts.sessionArtifactId());
+    }
+
+    /** Fetch one crawled page and, if a schema is given, extract it; failures become a failed page. */
+    private CrawlPage fetchPage(String pageUrl, CrawlOptions opts) {
+        FetchResult fetchResult;
+        try {
+            fetchResult = evadr.fetch(pageUrl, false, false, opts.sessionArtifactId());
+        } catch (Exception e) {
+            return new CrawlPage(false, pageUrl, 0, 0, null, null, null, e.getMessage());
+        }
+        Map<String, Object> structuredData = null;
+        if (opts.extractSchema() != null && !opts.extractSchema().isEmpty() && fetchResult.success()) {
+            try {
+                @SuppressWarnings("unchecked")
+                var schema = (Map<String, Object>) (Map<?, ?>) opts.extractSchema();
+                var extraction = kolektr.extract(pageUrl, schema, fetchResult.artifactId(), null, null);
+                if (!extraction.records().isEmpty()) {
+                    structuredData = extraction.records().get(0);
+                }
+            } catch (Exception ignored) {
+                // Extraction failure is non-fatal
+            }
+        }
+        return new CrawlPage(fetchResult.success(), fetchResult.url(), fetchResult.statusCode(),
+                fetchResult.tierUsed(), fetchResult.html(), structuredData,
+                fetchResult.artifactId(), fetchResult.error());
     }
 
     public static Builder builder() { return new Builder(); }
@@ -229,6 +177,8 @@ public final class Kloakd {
         private Duration timeout;
         private int maxRetries = -1;
         private HttpClient httpClient;
+        private Duration pollInterval;
+        private Duration pollTimeout;
 
         private Builder() {}
 
@@ -255,6 +205,22 @@ public final class Kloakd {
         /** 0 = one attempt, no retries. Default: 3. */
         public Builder maxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
+            return this;
+        }
+
+        /**
+         * First wait before polling a request the API handed off as a job
+         * (HTTP 202); each later wait is 1.5 times longer, at most 15 s.
+         * Default: 3 s.
+         */
+        public Builder pollInterval(Duration pollInterval) {
+            this.pollInterval = pollInterval;
+            return this;
+        }
+
+        /** Limit on following a handed-off request (then JobTimeoutException). Default: 15 min. */
+        public Builder pollTimeout(Duration pollTimeout) {
+            this.pollTimeout = pollTimeout;
             return this;
         }
 

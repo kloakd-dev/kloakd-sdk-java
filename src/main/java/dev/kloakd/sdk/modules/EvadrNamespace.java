@@ -3,9 +3,6 @@ package dev.kloakd.sdk.modules;
 import dev.kloakd.sdk.http.HttpTransport;
 import dev.kloakd.sdk.models.*;
 
-import dev.kloakd.sdk.errors.ApiException;
-import dev.kloakd.sdk.errors.KloakdException;
-
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -20,33 +17,33 @@ public final class EvadrNamespace {
 
     // ── Fetch ─────────────────────────────────────────────────────────────────
 
-    /** Default interval between polls of a handed-off fetch. */
-    public static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
+    /** Default first wait before polling a handed-off fetch. */
+    public static final Duration DEFAULT_POLL_INTERVAL = HttpTransport.DEFAULT_POLL_INTERVAL;
     /** Default limit on following a handed-off fetch. */
-    public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMinutes(15);
+    public static final Duration DEFAULT_POLL_TIMEOUT = HttpTransport.DEFAULT_POLL_TIMEOUT;
 
     public FetchResult fetch(String url) {
         return fetch(url, false, false, null);
     }
 
     public FetchResult fetch(String url, boolean forceBrowser, boolean useProxy, String sessionArtifactId) {
-        return fetch(url, forceBrowser, useProxy, sessionArtifactId, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_TIMEOUT);
+        return fetch(url, forceBrowser, useProxy, sessionArtifactId, t.pollInterval(), t.pollTimeout());
     }
 
     /**
      * Fetch a URL. The API answers within about 85 s; a slower site is handed
-     * off as a job (HTTP 202), which this follows by polling
-     * {@code evadr/jobs/{id}} every {@code pollInterval}, up to {@code pollTimeout},
-     * and returns the job's result.
+     * off as a job (HTTP 202), which this follows by polling the 202's
+     * {@code poll_url} ({@code evadr/jobs/{id}}), first after {@code pollInterval}
+     * and then with growing waits, up to {@code pollTimeout}, and returns the
+     * job's result.
+     *
+     * @throws dev.kloakd.sdk.errors.JobFailedException  the job failed or expired
+     * @throws dev.kloakd.sdk.errors.JobTimeoutException still running after {@code pollTimeout}
      */
     public FetchResult fetch(String url, boolean forceBrowser, boolean useProxy, String sessionArtifactId,
                              Duration pollInterval, Duration pollTimeout) {
         var body = fetchBody(url, forceBrowser, useProxy, sessionArtifactId);
-        HttpTransport.Response resp = t.send("POST", "evadr/fetch", body, null);
-        if (resp.status() == 202 && resp.body().get("job_id") instanceof String jobId) {
-            return followJob(jobId, pollInterval, pollTimeout);
-        }
-        return parseFetchResult(resp.body());
+        return parseFetchResult(t.postFollowing("evadr/fetch", body, pollInterval, pollTimeout));
     }
 
     private static HashMap<String, Object> fetchBody(String url, boolean forceBrowser, boolean useProxy,
@@ -59,31 +56,13 @@ public final class EvadrNamespace {
         return body;
     }
 
-    /** Poll a fetch job until it completes (its result) or fails (ApiException). */
-    @SuppressWarnings("unchecked")
+    /**
+     * Poll a fetch job ({@code evadr/jobs/{id}}) until it completes (its result)
+     * or fails ({@link dev.kloakd.sdk.errors.JobFailedException}); past
+     * {@code pollTimeout}, {@link dev.kloakd.sdk.errors.JobTimeoutException}.
+     */
     public FetchResult followJob(String jobId, Duration pollInterval, Duration pollTimeout) {
-        long deadline = System.nanoTime() + pollTimeout.toNanos();
-        while (true) {
-            try {
-                Thread.sleep(pollInterval.toMillis());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new KloakdException(0, "Interrupted while following job " + jobId);
-            }
-            Map<String, Object> job = t.get("evadr/jobs/" + jobId, null);
-            String status = str(job, "status");
-            if ("completed".equals(status)) {
-                Object result = job.get("result");
-                return parseFetchResult(result instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of());
-            }
-            if ("failed".equals(status)) {
-                String error = str(job, "error");
-                throw new ApiException(200, error != null ? error : "fetch job failed", "job_failed");
-            }
-            if (System.nanoTime() > deadline) {
-                throw new ApiException(0, "fetch job " + jobId + " still running after " + pollTimeout, "job_timeout");
-            }
-        }
+        return parseFetchResult(t.followHandOff(jobId, "evadr/jobs/" + jobId, pollInterval, pollTimeout));
     }
 
     /** Start an asynchronous fetch and return its job ID. */
@@ -104,7 +83,7 @@ public final class EvadrNamespace {
      */
     public CompletableFuture<FetchResult> fetchAsync(
             String url, boolean forceBrowser, boolean useProxy, String webhookUrl) {
-        return fetchAsync(url, forceBrowser, useProxy, webhookUrl, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_TIMEOUT);
+        return fetchAsync(url, forceBrowser, useProxy, webhookUrl, t.pollInterval(), t.pollTimeout());
     }
 
     public CompletableFuture<FetchResult> fetchAsync(

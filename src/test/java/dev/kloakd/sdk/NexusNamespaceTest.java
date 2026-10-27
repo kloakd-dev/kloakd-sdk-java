@@ -57,11 +57,24 @@ class NexusNamespaceTest {
     }
 
     @Test
+    void execute_withoutExecutionResultIdIsNull() {
+        routes.json("POST nexus/execute", 200, Map.of("strategy_id", "st-1", "success", false,
+                "error_message", "no records"));
+
+        var exec = client.nexus().execute("st-1", "https://example.com", Map.of("limit", 5));
+
+        assertNull(exec.executionResultId());
+        assertEquals("no records", exec.error());
+        assertEquals(Map.of("limit", 5), routes.bodies.get("POST nexus/execute").get("options"));
+    }
+
+    @Test
     void verifyExecuteKnowledge_readTheApiFields() {
         routes.json("POST nexus/verify", 200, Map.of("strategy_id", "st-1", "verified", true,
                 "safety_score", 0.95, "violations", List.of()));
         routes.json("POST nexus/execute", 200, Map.of("url", "https://example.com", "strategy_id", "st-1",
-                "success", true, "records", List.of(Map.of("a", 1)), "duration_ms", 12));
+                "success", true, "records", List.of(Map.of("a", 1)), "duration_ms", 12,
+                "execution_result_id", "ex-1"));
         routes.json("POST nexus/knowledge", 200, Map.of("execution_result_id", "ex-1",
                 "learned_concepts", List.of(), "patterns", List.of(Map.of()), "total_patterns", 1));
 
@@ -69,6 +82,8 @@ class NexusNamespaceTest {
         var exec = client.nexus().execute("st-1", "https://example.com");
         assertEquals(1, exec.records().size());
         assertEquals(12, exec.durationMs());
-        assertEquals(1, client.nexus().knowledge("ex-1").totalPatterns());
+        assertEquals("ex-1", exec.executionResultId());
+        assertEquals(1, client.nexus().knowledge(exec.executionResultId()).totalPatterns());
+        assertEquals("ex-1", routes.bodies.get("POST nexus/knowledge").get("execution_result_id"));
     }
 }

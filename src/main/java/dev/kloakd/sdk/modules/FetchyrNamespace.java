@@ -21,10 +21,15 @@ public final class FetchyrNamespace {
     /**
      * Log in to a site with credentials stored under {@code credentialName}
      * ({@link #storeCredentials}). Replaces 0.2's {@code login}, whose route
-     * was removed: the API no longer takes selectors or a password per call.
+     * was removed: the API no longer takes selectors or a password per call. The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}.
      */
     public SessionResult authenticate(String credentialName, String targetUrl) {
-        return parseSessionResult(t.post("fetchyr/authenticate",
+        return parseSessionResult(t.postFollowing("fetchyr/authenticate",
                 Map.of("credential_name", credentialName, "target_url", targetUrl)));
     }
 
@@ -81,20 +86,32 @@ public final class FetchyrNamespace {
 
     // ── Form detection ────────────────────────────────────────────────────────
 
+    /** Detect the forms on a page ({@code POST fetchyr/form/detect}). The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}. */
     public FormDetectionResult detectForms(String url, String sessionArtifactId) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
-        return parseFormDetectionResult(t.post("fetchyr/form/detect", body));
+        return parseFormDetectionResult(t.postFollowing("fetchyr/form/detect", body));
     }
 
     // ── MFA handling ──────────────────────────────────────────────────────────
 
+    /** Detect an MFA challenge on a page ({@code POST fetchyr/mfa/detect}). The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}. */
     public MfaDetectionResult detectMfa(String url, String sessionArtifactId) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
-        return parseMfaDetectionResult(t.post("fetchyr/mfa/detect", body));
+        return parseMfaDetectionResult(t.postFollowing("fetchyr/mfa/detect", body));
     }
 
     /**
@@ -125,12 +142,18 @@ public final class FetchyrNamespace {
 
     // ── Form filling ─────────────────────────────────────────────────────────
 
+    /** Fill and submit a form ({@code POST fetchyr/form/fill}). The API answers within about
+     * 85 s; a request still running then is handed off as a job (HTTP 202),
+     * which this follows to its result with the client's poll settings
+     * ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval}); a failed or expired
+     * job throws {@link dev.kloakd.sdk.errors.JobFailedException}, one still
+     * running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}. */
     public Map<String, Object> fillForm(String url, Map<String, String> formData, String sessionArtifactId) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         body.put("form_data", formData);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
-        return t.post("fetchyr/form/fill", body);
+        return t.postFollowing("fetchyr/form/fill", body);
     }
 
     // ── MFA queue and statistics ─────────────────────────────────────────────

@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 import static dev.kloakd.sdk.TestHelpers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 0.3.0: the 202 hand-off, the typed billing errors, and every call a live route. */
+/** 0.3.0: the 202 hand-off, the typed billing errors, and every call a live route (route list updated for 0.4.0). */
 class LiveRoutesTest {
 
     private MockWebServer server;
@@ -159,8 +159,9 @@ class LiveRoutesTest {
             }
         }
         var verbs = Map.of("get", "GET", "post", "POST", "put", "PUT", "patch", "PATCH", "delete", "DELETE",
-                "stream", "POST", "streamWithEvents", "POST", "postAsync", "POST", "getStream", "GET");
-        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|request|send)\\(\\s*"
+                "stream", "POST", "streamWithEvents", "POST", "postAsync", "POST", "getStream", "GET",
+                "postFollowing", "POST");
+        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|postFollowing|request|send)\\(\\s*"
                 + "(?:\"(GET|POST|PUT|PATCH|DELETE)\",\\s*)?((?:\"[^\"]*\"|[A-Za-z_][\\w.()]*)(?:\\s*\\+\\s*(?:\"[^\"]*\"|[A-Za-z_][\\w.()]*))*)");
         int found = 0;
         var problems = new ArrayList<String>();
@@ -181,5 +182,40 @@ class LiveRoutesTest {
         }
         assertTrue(found >= 100, "found only " + found + " calls; the scan is broken");
         assertEquals(List.of(), problems, "calls to routes that do not exist");
+    }
+
+    // ── 0.4.0: routes removed from the API, and the hand-off poll route ─────
+
+    private static List<String> fixture() throws IOException {
+        try (var in = LiveRoutesTest.class.getResourceAsStream("/routes.tsv")) {
+            return List.of(new String(in.readAllBytes()).split("\n"));
+        }
+    }
+
+    @Test
+    void removedRoutesAreAbsentAndTheHandOffPollRouteIsPresent() throws IOException {
+        var lines = fixture();
+        assertTrue(lines.stream().noneMatch(l -> l.contains("/recommendations/")),
+                "nexus/recommendations/* were removed from the API");
+        assertFalse(lines.contains("POST\t/api/v1/organizations/{organization_id}/kolektr/jobs"),
+                "POST kolektr/jobs was removed from the API");
+        assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/kolektr/jobs/{job_id}"));
+        assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/handoff/{job_id}"));
+    }
+
+    @Test
+    void theSdkHasNoMethodsForRemovedRoutes() {
+        var nexus = Arrays.stream(dev.kloakd.sdk.modules.NexusNamespace.class.getMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        for (String gone : List.of("recommendAnalyze", "listRecommendationApplications", "getCacheStatistics",
+                "cleanupCache", "invalidateCache", "getHooksStatus", "enableHook", "disableHook",
+                "createPreference", "getPreferences", "updatePreference", "deletePreference",
+                "getRecommendationStatistics")) {
+            assertFalse(nexus.contains(gone), gone);
+        }
+        var kolektr = Arrays.stream(dev.kloakd.sdk.modules.KolektrNamespace.class.getMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        assertFalse(kolektr.contains("createJob"));
+        assertTrue(kolektr.contains("getJob"));
     }
 }
