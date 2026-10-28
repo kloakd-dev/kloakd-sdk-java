@@ -5,6 +5,107 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — unreleased
+
+The 0.5.0 fixes shared by the four KLOAKD SDKs, checked against kobe-scraper
+e5f15f7d. `mvn --batch-mode clean verify -Dgpg.skip`: 211 tests, line
+coverage 0.92, branch 0.80.
+
+### Breaking changes
+- `ChatTurn` is rebuilt from the events the API sends (`thinking`,
+  `interpretation`, `progress`, `results`, `error`, `warning`,
+  `auth_required`, `mfa_required`, `clarification`, `export_ready`, `text`,
+  then `end`): `sessionId, intent, response, clarification, interpretation,
+  results, warnings, errors, actions, events` and `ok()`. The old
+  `confidence`, `tier`, `entities`, `requiresAction` and
+  `clarificationNeeded` were never sent. `response` joins the `text` and
+  `clarification` contents; `intent` is `interpretation.intent` (the API
+  sends none today, so null). `error` events are collected in `errors()`.
+- `ChatEvent` is `(type, content, data, actions, timestamp)` (was
+  `(event, data)`; `event()` remains, deprecated). `chatStream` stops at `end`.
+- `CrawlEvent` is removed: `webgrph().crawlStream` returns
+  `Stream<PipelineEvent>` (`eventType, stageId, status, message,
+  progressPct, metadata, error, sequence, ...`).
+- `FetchEvent` is `(type, jobId, status, tierUsed, artifactId, error,
+  pipelineEvent)` (was `type, tier, vendor, metadata`, which the API never sent).
+- `FetchResult` and `ExtractionResult` gain `authRequired` and
+  `discoveryId` (new record components).
+- `evadr().fetchAsync(url, forceBrowser, useProxy, webhookUrl[, interval,
+  timeout])` is removed: its 4th argument was the webhook while `fetch`'s is
+  the session. Use `fetchAsync(url, FetchOptions)`.
+- `CrawlOptions`: `extractSchema` is `Map<String, ?>` (it can hold a
+  `fields` list); `outputFormat` is removed (never used); `scope`, `budget`,
+  `captureMode` are added.
+- `skanyr().listSites()` returns `List<Map<String, Object>>` (was a map
+  with `items`).
+- A 403 is `NotEntitledException` only for `not_entitled` and
+  `tier_access_denied`; any other 403 is the new `ForbiddenException`.
+  `NotEntitledException` now extends `ForbiddenException` (and so `ApiException`).
+- POST, PUT and PATCH are no longer retried on 5xx (the work may have been
+  done). GET, HEAD and DELETE are, and also on network errors.
+- `webgrph().crawl` throws `JobTimeoutException` (code still
+  `crawl_timeout`, `getJobId()` the crawl id) instead of a plain `ApiException`.
+- `examples/Quickstart.java` is no longer in the jar (`dev.kloakd.examples`).
+
+### Fixed
+- Default timeout 100 s (was 30 s): above the API's 85 s synchronous wait,
+  so a slow request receives its 202 hand-off. It applies per attempt.
+- The extraction schema shorthand `{field: "css:selector"}` is sent as
+  `{"fields": [{"name", "selector"}]}` (`kolektr().extract`, `extractHtml`,
+  `client.crawl`); a full spec with `fields` is sent as given.
+- `client.crawl` reports the crawl's own `success` and `error`, and throws
+  billing and auth errors (`PaymentRequired`, `QuotaExceeded`,
+  `BillingUnavailable`, `NotEntitled`, `Authentication`, `RateLimit`)
+  instead of marking every page failed.
+- `client.crawlStream` streams: each event is produced when it is read
+  (it used to run the whole crawl first).
+- `webgrph().listSessions(false)` sends `active_only=false` (the API
+  defaults to true, so false was ignored).
+- 429 `rate_limited` is retried on any method after `Retry-After`,
+  `retry_after` or `reset_at` (waits over 60 s are thrown). The playground
+  quota (`retry_after` 0, no reset) is not retried: `RateLimitException`
+  has `isQuotaExhausted()`, `getQuotaUsed()`, `getQuotaLimit()`, `getUpgradeUrl()`.
+- 503 `billing_unavailable` is retried on any method.
+- A non-JSON error body is the exception's message; a 422's `detail[]`
+  becomes `loc: msg; ...`.
+- Path values are percent-encoded, including the API endpoint URL of
+  `kolektr/api-data/{api_endpoint:path}`.
+- SSE: several `data:` lines are joined, comments skipped, and a read error
+  is thrown instead of ending the stream silently; closing the stream closes
+  the connection.
+
+### Added
+- `User-Agent: kloakd-sdk-java/0.5.0` on every request.
+- `client.getHandoff(jobId)` and `client.waitForHandoff(jobId[, interval,
+  timeout])` (`GET handoff/{job_id}`): resume after a `JobTimeoutException`.
+  `webgrph().waitForCrawl(crawlId, ...)` does the same for a crawl.
+- `ConcurrencyLimitException` for 409 `concurrent_limit`
+  (`getConcurrentLimit`, `getActiveCrawls`, `getTier`).
+- `NotEntitledException.getFeature()`, `getCurrentTier()`,
+  `getRequiredTier()` (`tier_access_denied`); `QuotaExceededException.getTier()`.
+- `FetchOptions` (`evadr().fetch/fetchAsync/startFetchJob/fetchStream(url, options)`),
+  `ExtractOptions` (`kolektr().extract(url, options)`: `level`, `options`,
+  `pipeline_id`), `CrawlOptions.Builder.buildAsSet()` and
+  `webgrph().startCrawl/crawl(url, CrawlOptions)`.
+- `nexus().reason(queryType, parameters[, perceptionId])`; `reason(Map)` is deprecated.
+- Skanyr, as in the JS SDK: `updateSite`, `siteFromCrawl`, `exportSite`
+  (ZIP bytes), `getSiteApis`, `getSiteResources`, `searchSite`,
+  `getFindings`, `getTechnologies`, `getTechnologyEvidence`,
+  `listSnapshots`, `getTimeline`, `getTimelineSnapshot`, `diff`,
+  `getGraph`, `getGraphStats`, `getSubgraph`, `listResources`,
+  `getResource`, `getExtractionText`, `getExtractionStructure`, and
+  `search(..., mimeType)`. `setSitePolicy`, `createSiteFromCrawl`,
+  `siteResources` and `siteApis` remain, deprecated.
+- `fetchyr().resumeAuthChainCredentials` and `resumeAuthChainMfa`;
+  `createMultiSiteWorkflow(name, sites, description, dependencies,
+  globalConfig)` and `FetchyrNamespace.siteDependency(...)`.
+- Paging: `kolektr().listJobs(page, limit, statusFilter)`,
+  `listScrapers(page, pageSize, isTemplate)`, `listContent(page, pageSize,
+  search)`, `fetchyr().listWorkflows(page, pageSize)`; api-data
+  `endpointHash` and `maxRecords`.
+- `webgrph().readerView(url, crawlId, sessionArtifactId)`.
+- README: a Gradle snippet, retries, resuming hand-offs, schemas, chat.
+
 ## [0.4.1] — 2026-10-28
 
 The 0.4.0 code, published. 0.4.0's upload was refused by Maven Central
