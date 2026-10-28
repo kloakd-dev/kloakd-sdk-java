@@ -4,6 +4,7 @@ import dev.kloakd.sdk.http.HttpTransport;
 import dev.kloakd.sdk.models.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static dev.kloakd.sdk.modules.EvadrNamespace.*;
@@ -84,6 +85,28 @@ public final class NexusNamespace {
 
     // ── Reason ───────────────────────────────────────────────────────────────
 
+    /**
+     * Logical reasoning via the Strategy Engine ({@code POST nexus/reason}):
+     * {@code {"query_type", "parameters"}} (modules/nexus/router.py ReasonRequest).
+     * The answer holds {@code success}, {@code results}, {@code confidence}, {@code reasoning_id}.
+     */
+    public Map<String, Object> reason(String queryType, List<String> parameters) {
+        return reason(queryType, parameters, null);
+    }
+
+    public Map<String, Object> reason(String queryType) { return reason(queryType, List.of(), null); }
+
+    /** {@link #reason(String, List)} about a prior analysis ({@code perceptionId} may be null). */
+    public Map<String, Object> reason(String queryType, List<String> parameters, String perceptionId) {
+        var body = new HashMap<String, Object>();
+        body.put("query_type", queryType);
+        body.put("parameters", parameters != null ? parameters : List.of());
+        if (perceptionId != null) body.put("perception_id", perceptionId);
+        return t.post("nexus/reason", body);
+    }
+
+    /** @deprecated the API takes {@code query_type} and a list of string {@code parameters}: use {@link #reason(String, List)}. */
+    @Deprecated
     public Map<String, Object> reason(Map<String, Object> context) { return t.post("nexus/reason", context); }
 
     // ── parsers ──────────────────────────────────────────────────────────────

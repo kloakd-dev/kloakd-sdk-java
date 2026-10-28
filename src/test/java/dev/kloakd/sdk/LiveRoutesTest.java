@@ -161,7 +161,7 @@ class LiveRoutesTest {
         var verbs = Map.of("get", "GET", "post", "POST", "put", "PUT", "patch", "PATCH", "delete", "DELETE",
                 "stream", "POST", "streamWithEvents", "POST", "postAsync", "POST", "getStream", "GET",
                 "postFollowing", "POST");
-        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|postFollowing|request|send)\\(\\s*"
+        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|postFollowing|request|requestList|requestBytes|requestText|send)\\(\\s*"
                 + "(?:\"(GET|POST|PUT|PATCH|DELETE)\",\\s*)?((?:\"[^\"]*\"|[A-Za-z_][\\w.()]*)(?:\\s*\\+\\s*(?:\"[^\"]*\"|[A-Za-z_][\\w.()]*))*)");
         int found = 0;
         var problems = new ArrayList<String>();
@@ -180,8 +180,8 @@ class LiveRoutesTest {
                 }
             }
         }
-        // 0.4.0 makes 91 calls (0.3.0: 123; 32 went with removed routes).
-        assertTrue(found >= 85, "found only " + found + " calls; the scan is broken");
+        // 0.5.0 makes 113 calls (0.4.0: 91; 0.3.0: 123).
+        assertTrue(found >= 110, "found only " + found + " calls; the scan is broken");
         assertEquals(List.of(), problems, "calls to routes that do not exist");
     }
 

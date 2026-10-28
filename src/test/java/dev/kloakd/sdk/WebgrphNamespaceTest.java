@@ -86,13 +86,20 @@ class WebgrphNamespaceTest {
     @SuppressWarnings("unchecked")
     void crawlStream_startsTheCrawlAndStreamsItsEvents() {
         routes.sse("GET webgrph/crawl/c1/events",
-                Map.of("type", "page_discovered", "url", "https://example.com/a", "metadata", Map.of()),
-                Map.of("type", "done", "metadata", Map.of()));
+                Map.of("pipeline_id", "c1", "event_type", "pipeline_step", "stage_id", "crawl", "status", "in_progress",
+                        "message", "Crawling", "progress_pct", 40.0, "sequence", 1, "metadata", Map.of(),
+                        "sub_status", "Discovered 15/500 pages (depth 1/3)"),
+                Map.of("event_type", "pipeline_complete", "sequence", 2, "crawl_id", "c1", "metadata", Map.of()));
 
         var events = client.webgrph().crawlStream("https://example.com").toList();
 
         assertEquals(2, events.size());
-        assertEquals("page_discovered", events.get(0).type());
+        assertEquals("pipeline_step", events.get(0).eventType());
+        assertEquals(40.0, events.get(0).progressPct());
+        assertEquals("Discovered 15/500 pages (depth 1/3)", events.get(0).subStatus());
+        assertEquals("pipeline_complete", events.get(1).eventType());
+        assertEquals("c1", events.get(1).pipelineId());
+        assertEquals(2, events.get(1).sequence());
     }
 
     @Test

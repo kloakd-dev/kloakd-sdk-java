@@ -76,11 +76,13 @@ class EvadrNamespaceTest {
         routes.json("GET evadr/jobs/j1", 200, Map.of("job_id", "j1", "status", "completed", "result", Map.of(
                 "success", true, "url", "https://example.com", "status_code", 200, "tier_used", 1)));
 
-        var result = client.evadr().fetchAsync("https://example.com", false, false, null,
-                java.time.Duration.ofMillis(1), java.time.Duration.ofSeconds(5)).get(5, TimeUnit.SECONDS);
+        var result = client.evadr().fetchAsync("https://example.com", dev.kloakd.sdk.models.FetchOptions.builder()
+                .webhookUrl("https://hooks.example.com/k").pollInterval(java.time.Duration.ofMillis(1))
+                .pollTimeout(java.time.Duration.ofSeconds(5)).build()).get(5, TimeUnit.SECONDS);
 
         assertTrue(result.success());
         assertEquals(1, result.tierUsed());
+        assertEquals("https://hooks.example.com/k", routes.bodies.get("POST evadr/fetch/async").get("webhook_url"));
     }
 
     @Test
@@ -89,14 +91,23 @@ class EvadrNamespaceTest {
         var routes = routes(server);
         routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j2", "status", "pending", "message", "queued"));
         routes.sse("GET evadr/jobs/j2/events",
-                Map.of("type", "tier_attempt", "tier", 1, "metadata", Map.of()),
-                Map.of("type", "tier_success", "tier", 1, "vendor", "cloudflare", "metadata", Map.of()),
-                Map.of("type", "complete", "metadata", Map.of()));
+                Map.of("type", "STATUS", "job_id", "j2", "status", "running"),
+                Map.of("type", "COMPLETE", "job_id", "j2", "tier_used", 2, "artifact_id", "art-9"),
+                Map.of("pipeline_id", "j2", "event_type", "pipeline_error", "stage_id", "fetch", "status", "failed",
+                        "message", "blocked", "sequence", 4, "metadata", Map.of(),
+                        "error", Map.of("error_code", "bot", "user_message", "Blocked by the site")));
 
         var events = client.evadr().fetchStream("https://example.com", true).toList();
 
         assertEquals(3, events.size());
-        assertEquals("cloudflare", events.get(1).vendor());
+        assertEquals("running", events.get(0).status());
+        assertEquals(2, events.get(1).tierUsed());
+        assertEquals("art-9", events.get(1).artifactId());
+        assertNull(events.get(1).pipelineEvent());
+        assertEquals("pipeline_error", events.get(2).type());
+        assertEquals("Blocked by the site", events.get(2).error());
+        assertEquals(4, events.get(2).pipelineEvent().sequence());
+        assertEquals("fetch", events.get(2).pipelineEvent().stageId());
         assertEquals(Boolean.TRUE, routes.bodies.get("POST evadr/fetch/async").get("force_browser"));
     }
 

@@ -38,9 +38,28 @@ public final class FetchyrNamespace {
         return t.post("fetchyr/auth-chain/discover", Map.of("target_url", targetUrl));
     }
 
+    /**
+     * Give a paused auth-chain discovery the credentials it asked for
+     * ({@code POST fetchyr/auth-chain/{id}/resume-credentials}). With
+     * {@code remember} the API stores them encrypted for later runs.
+     */
+    public Map<String, Object> resumeAuthChainCredentials(String discoveryId, String username, String password,
+                                                          boolean remember) {
+        var body = new HashMap<String, Object>();
+        body.put("username", username);
+        body.put("password", password);
+        body.put("remember", remember);
+        return t.post("fetchyr/auth-chain/" + seg(discoveryId) + "/resume-credentials", body);
+    }
+
+    /** Give a paused auth-chain discovery its MFA code ({@code POST fetchyr/auth-chain/{id}/resume-mfa}). */
+    public Map<String, Object> resumeAuthChainMfa(String discoveryId, String mfaCode) {
+        return t.post("fetchyr/auth-chain/" + seg(discoveryId) + "/resume-mfa", Map.of("mfa_code", mfaCode));
+    }
+
     /** An auth-chain discovery's status. */
     public Map<String, Object> getAuthChainStatus(String discoveryId) {
-        return t.get("fetchyr/auth-chain/" + discoveryId + "/status", null);
+        return t.get("fetchyr/auth-chain/" + seg(discoveryId) + "/status", null);
     }
 
     // ── Workflow automation ───────────────────────────────────────────────────
@@ -69,18 +88,18 @@ public final class FetchyrNamespace {
         body.put("target_url", targetUrl);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
         if (inputData != null && !inputData.isEmpty()) body.put("input_data", inputData);
-        return parseExecutionResult(t.post("fetchyr/workflows/" + workflowId + "/execute", body));
+        return parseExecutionResult(t.post("fetchyr/workflows/" + seg(workflowId) + "/execute", body));
     }
 
     public ExecutionResult getExecution(String workflowId, String executionId) {
         return parseExecutionResult(t.get(
-                "fetchyr/workflows/" + workflowId + "/executions/" + executionId, null));
+                "fetchyr/workflows/" + seg(workflowId) + "/executions/" + seg(executionId), null));
     }
 
     /** Resume a paused execution (after MFA): {@code mfa_code} and/or {@code resolution}. */
     public ExecutionResult resumeExecution(String workflowId, String executionId, Map<String, Object> resume) {
         return parseExecutionResult(t.post(
-                "fetchyr/workflows/" + workflowId + "/executions/" + executionId + "/resume",
+                "fetchyr/workflows/" + seg(workflowId) + "/executions/" + seg(executionId) + "/resume",
                 resume != null ? resume : Map.of()));
     }
 
@@ -119,7 +138,7 @@ public final class FetchyrNamespace {
      * {@code submitMfa}, whose route was removed.
      */
     public Map<String, Object> resolveMfa(String challengeId, String resolution) {
-        return t.post("fetchyr/mfa-queue/" + challengeId + "/resolve", Map.of("resolution", resolution));
+        return t.post("fetchyr/mfa-queue/" + seg(challengeId) + "/resolve", Map.of("resolution", resolution));
     }
 
     // ── Credentials ──────────────────────────────────────────────────────────
@@ -132,13 +151,13 @@ public final class FetchyrNamespace {
 
     public Map<String, Object> listCredentials() { return t.get("fetchyr/account/credentials", null); }
 
-    public void deleteCredentials(String name) { t.delete("fetchyr/account/credentials/" + name); }
+    public void deleteCredentials(String name) { t.delete("fetchyr/account/credentials/" + seg(name)); }
 
     // ── Session management ───────────────────────────────────────────────────
 
     public Map<String, Object> listSessions() { return t.get("fetchyr/sessions", null); }
 
-    public void terminateSession(String artifactId) { t.delete("fetchyr/sessions/" + artifactId); }
+    public void terminateSession(String artifactId) { t.delete("fetchyr/sessions/" + seg(artifactId)); }
 
     // ── Form filling ─────────────────────────────────────────────────────────
 
@@ -159,21 +178,56 @@ public final class FetchyrNamespace {
     // ── MFA queue and statistics ─────────────────────────────────────────────
 
     public Map<String, Object> listMfaChallenges() { return t.get("fetchyr/mfa-queue", null); }
-    public Map<String, Object> getMfaChallenge(String challengeId) { return t.get("fetchyr/mfa/challenges/" + challengeId, null); }
-    public Map<String, Object> getMfaStatistics(String domain) { return t.get("fetchyr/mfa/statistics/" + domain, null); }
+    public Map<String, Object> getMfaChallenge(String challengeId) { return t.get("fetchyr/mfa/challenges/" + seg(challengeId), null); }
+    public Map<String, Object> getMfaStatistics(String domain) { return t.get("fetchyr/mfa/statistics/" + seg(domain), null); }
 
     // ── Workflow CRUD ────────────────────────────────────────────────────────
 
-    public Map<String, Object> listWorkflows() { return t.get("fetchyr/workflows", null); }
-    public Map<String, Object> getWorkflow(String workflowId) { return t.get("fetchyr/workflows/" + workflowId, null); }
-    public Map<String, Object> updateWorkflow(String workflowId, Map<String, Object> updates) { return t.patch("fetchyr/workflows/" + workflowId, updates); }
-    public void deleteWorkflow(String workflowId) { t.delete("fetchyr/workflows/" + workflowId); }
-    public Map<String, Object> getWorkflowStatistics(String workflowId) { return t.get("fetchyr/workflows/" + workflowId + "/statistics", null); }
+    public Map<String, Object> listWorkflows() { return listWorkflows(0, 0); }
+
+    /** RPA workflows (page/pageSize 0 for the defaults, 1 and 20). */
+    public Map<String, Object> listWorkflows(int page, int pageSize) {
+        return t.get("fetchyr/workflows", KolektrNamespace.paging("page", page, "page_size", pageSize));
+    }
+    public Map<String, Object> getWorkflow(String workflowId) { return t.get("fetchyr/workflows/" + seg(workflowId), null); }
+    public Map<String, Object> updateWorkflow(String workflowId, Map<String, Object> updates) { return t.patch("fetchyr/workflows/" + seg(workflowId), updates); }
+    public void deleteWorkflow(String workflowId) { t.delete("fetchyr/workflows/" + seg(workflowId)); }
+    public Map<String, Object> getWorkflowStatistics(String workflowId) { return t.get("fetchyr/workflows/" + seg(workflowId) + "/statistics", null); }
 
     // ── Multi-site ───────────────────────────────────────────────────────────
 
     public Map<String, Object> createMultiSiteWorkflow(String name, List<Map<String, Object>> sites) {
-        return t.post("fetchyr/multi-site-workflows", Map.of("name", name, "sites", sites));
+        return createMultiSiteWorkflow(name, sites, null, null, null);
+    }
+
+    /**
+     * Create a multi-site workflow ({@code POST fetchyr/multi-site-workflows}).
+     *
+     * @param sites        each {@code {site_id, name, url, authentication_config?, workflow_steps?, ...}}
+     * @param description  or null
+     * @param dependencies each {@code {dependent_site, dependency_site, dependency_type?}}
+     *                     ({@code sequential}, {@code data} or {@code conditional}), or null
+     * @param globalConfig workflow-wide configuration, or null
+     */
+    public Map<String, Object> createMultiSiteWorkflow(String name, List<Map<String, Object>> sites,
+                                                       String description, List<Map<String, Object>> dependencies,
+                                                       Map<String, Object> globalConfig) {
+        var body = new HashMap<String, Object>();
+        body.put("name", name);
+        body.put("sites", sites);
+        if (description != null) body.put("description", description);
+        if (dependencies != null && !dependencies.isEmpty()) body.put("dependencies", dependencies);
+        if (globalConfig != null) body.put("global_config", globalConfig);
+        return t.post("fetchyr/multi-site-workflows", body);
+    }
+
+    /** One multi-site dependency: {@code dependent} runs after {@code dependency}. */
+    public static Map<String, Object> siteDependency(String dependent, String dependency, String dependencyType) {
+        var d = new HashMap<String, Object>();
+        d.put("dependent_site", dependent);
+        d.put("dependency_site", dependency);
+        if (dependencyType != null) d.put("dependency_type", dependencyType);
+        return d;
     }
 
     // ── Deduplication ─────────────────────────────────────────────────────────
@@ -189,9 +243,9 @@ public final class FetchyrNamespace {
 
     public Map<String, Object> createDedupSession(Map<String, Object> config) { return t.post("fetchyr/deduplication/sessions", config); }
     public Map<String, Object> listDedupSessions() { return t.get("fetchyr/deduplication/sessions/active", null); }
-    public Map<String, Object> getDedupSession(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + sessionId, null); }
-    public Map<String, Object> getDedupSessionStatistics(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + sessionId + "/statistics", null); }
-    public Map<String, Object> getDedupDomainStatistics(String domain) { return t.get("fetchyr/deduplication/statistics/" + domain, null); }
+    public Map<String, Object> getDedupSession(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + seg(sessionId), null); }
+    public Map<String, Object> getDedupSessionStatistics(String sessionId) { return t.get("fetchyr/deduplication/sessions/" + seg(sessionId) + "/statistics", null); }
+    public Map<String, Object> getDedupDomainStatistics(String domain) { return t.get("fetchyr/deduplication/statistics/" + seg(domain), null); }
 
     // ── parsers ───────────────────────────────────────────────────────────────
 

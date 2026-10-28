@@ -70,7 +70,7 @@ class CrawlOrchestratorTest {
                 routes.bodies.get("POST webgrph/crawl"));
         var extract = routes.bodies.get("POST kolektr/extract");
         assertEquals("art-a", extract.get("fetch_artifact_id"));
-        assertEquals(Map.of("title", "css:h1"), extract.get("schema_spec"));
+        assertEquals(Map.of("fields", List.of(Map.of("name", "title", "selector", "h1"))), extract.get("schema_spec"));
         assertEquals(1, routes.seen.stream().filter("POST kolektr/extract"::equals).count(),
                 "only the successful page is extracted");
     }
@@ -121,12 +121,14 @@ class CrawlOrchestratorTest {
         var opts = CrawlOptions.builder().build();
         assertEquals(3, opts.maxDepth());
         assertEquals(100, opts.maxPages());
-        assertEquals("json", opts.outputFormat());
         assertNull(opts.extractSchema());
 
-        var set = CrawlOptions.builder().maxDepth(1).maxPages(5).outputFormat("markdown")
+        var set = CrawlOptions.builder().maxDepth(1).maxPages(5)
                 .includeExternalLinks(true).sessionArtifactId("sess").build();
-        assertEquals("markdown", set.outputFormat());
+        assertEquals(5, set.maxPages());
+        var asSet = CrawlOptions.builder().buildAsSet();
+        assertEquals(0, asSet.maxDepth());
+        assertEquals(0, asSet.maxPages());
         assertTrue(set.includeExternalLinks());
         assertEquals("sess", set.sessionArtifactId());
     }

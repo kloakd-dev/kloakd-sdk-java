@@ -79,7 +79,36 @@ class RouteMappingTest {
                 call("GET fetchyr/deduplication/sessions/active", c -> c.fetchyr().listDedupSessions()),
                 call("GET fetchyr/deduplication/sessions/s1", c -> c.fetchyr().getDedupSession("s1")),
                 call("GET fetchyr/deduplication/sessions/s1/statistics", c -> c.fetchyr().getDedupSessionStatistics("s1")),
-                call("GET fetchyr/deduplication/statistics/example.com", c -> c.fetchyr().getDedupDomainStatistics("example.com")));
+                call("GET fetchyr/deduplication/statistics/example.com", c -> c.fetchyr().getDedupDomainStatistics("example.com")),
+                call("POST fetchyr/auth-chain/d1/resume-credentials", c -> c.fetchyr().resumeAuthChainCredentials("d1", "u", "fixture-pass", false)),
+                call("POST fetchyr/auth-chain/d1/resume-mfa", c -> c.fetchyr().resumeAuthChainMfa("d1", "123456")),
+                // Skanyr (0.5.0 parity with the JS SDK)
+                call("GET skanyr/sites", c -> c.skanyr().listSites()),
+                call("POST skanyr/sites/from-crawl/c1", c -> c.skanyr().siteFromCrawl("c1")),
+                call("GET skanyr/sites/s1", c -> c.skanyr().getSite("s1")),
+                call("PATCH skanyr/sites/s1", c -> c.skanyr().updateSite("s1", "full")),
+                call("POST skanyr/sites/s1/export", c -> c.skanyr().exportSite("s1", null, 0)),
+                call("GET skanyr/sites/s1/apis", c -> c.skanyr().getSiteApis("s1")),
+                call("GET skanyr/sites/s1/resources", c -> c.skanyr().getSiteResources("s1")),
+                call("GET skanyr/sites/s1/search", c -> c.skanyr().searchSite("s1", "q", 0, 0, null)),
+                call("GET skanyr/sites/s1/findings", c -> c.skanyr().getFindings("s1")),
+                call("GET skanyr/sites/s1/technologies", c -> c.skanyr().getTechnologies("s1")),
+                call("GET skanyr/sites/s1/technology-evidence", c -> c.skanyr().getTechnologyEvidence("s1", "React", null, 0, 0)),
+                call("GET skanyr/sites/s1/snapshots", c -> c.skanyr().listSnapshots("s1", 0)),
+                call("GET skanyr/sites/s1/timeline", c -> c.skanyr().getTimeline("s1", 10)),
+                call("GET skanyr/sites/s1/timeline/snap1", c -> c.skanyr().getTimelineSnapshot("s1", "snap1")),
+                call("GET skanyr/sites/s1/diff", c -> c.skanyr().diff("s1", "a", "b")),
+                call("GET skanyr/sites/s1/graph", c -> c.skanyr().getGraph("s1", "page", 2, "link", 100)),
+                call("GET skanyr/sites/s1/graph/stats", c -> c.skanyr().getGraphStats("s1")),
+                call("GET skanyr/sites/s1/graph/subgraph/r1", c -> c.skanyr().getSubgraph("s1", "r1", 2)),
+                call("GET skanyr/resources", c -> c.skanyr().listResources("s1", null, 0, 0)),
+                call("GET skanyr/resources/r1", c -> c.skanyr().getResource("r1")),
+                call("GET skanyr/extractions/h1/text", c -> c.skanyr().getExtractionText("h1")),
+                call("GET skanyr/extractions/h1/structure", c -> c.skanyr().getExtractionStructure("h1")),
+                call("POST skanyr/extract", c -> c.skanyr().extract("h1", "text/html", null)),
+                call("POST skanyr/sync", c -> c.skanyr().sync("s1", null, null)),
+                call("DELETE skanyr/sites/s1", c -> c.skanyr().deleteSite("s1")),
+                call("GET handoff/j1", c -> c.getHandoff("j1")));
     }
 
     @ParameterizedTest(name = "{0}")

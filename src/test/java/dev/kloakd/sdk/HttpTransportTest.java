@@ -57,11 +57,14 @@ class HttpTransportTest {
     }
 
     @Test
-    void request_403_throwsNotEntitledException() {
-        enqueue(server, 403, Map.of("detail", "no plan", "module", "evadr"));
+    void request_403_notEntitled() {
+        enqueue(server, 403, Map.of("detail", Map.of("error", "not_entitled", "message", "Not entitled to access module: 'evadr'",
+                "module", "evadr", "upgrade_url", "https://app.kobe.dev/upgrade")));
         var ex = assertThrows(NotEntitledException.class, () ->
                 client.evadr().fetch("https://example.com"));
         assertEquals("evadr", ex.getModule());
+        assertEquals("not_entitled", ex.getCode());
+        assertEquals("https://app.kobe.dev/upgrade", ex.getUpgradeUrl());
     }
 
     @Test
@@ -103,9 +106,7 @@ class HttpTransportTest {
             @Override protected void sleep(long ms) { /* no-op: skip backoff in tests */ }
         };
 
-        assertThrows(ApiException.class, () ->
-                noSleepTransport.post("evadr/fetch",
-                        Map.of("url", "https://example.com")));
+        assertThrows(ApiException.class, () -> noSleepTransport.get("evadr/vendors", null));
 
         assertEquals(3, server.getRequestCount());
     }

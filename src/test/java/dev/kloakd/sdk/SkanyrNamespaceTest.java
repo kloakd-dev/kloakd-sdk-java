@@ -35,10 +35,10 @@ class SkanyrNamespaceTest {
         routes.json("PATCH skanyr/sites/s1", 200, Map.of("site_id", "s1", "policy", "full"));
         routes.json("DELETE skanyr/sites/s1", 200, Map.of("site_id", "s1", "deleted", true));
 
-        assertEquals(1, ((List<?>) client.skanyr().listSites().get("items")).size());
+        assertEquals(1, client.skanyr().listSites().size());
         assertEquals("y1", client.skanyr().sync("s1", null, "changed").get("sync_id"));
         client.skanyr().search("pricing", "s1", 5, 0);
-        client.skanyr().setSitePolicy("s1", "full");
+        client.skanyr().updateSite("s1", "full");
         client.skanyr().deleteSite("s1");
 
         assertEquals("s1", routes.bodies.get("POST skanyr/search").get("site_id"));

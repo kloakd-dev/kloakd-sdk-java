@@ -1,17 +1,18 @@
-package dev.kloakd.examples;
-
 import dev.kloakd.sdk.Kloakd;
 
 import java.util.Map;
 
 /**
- * Quickstart: Discover and extract from a site in ~10 lines.
- * This scenario is identical across all 4 KLOAKD SDKs per the design document §13.
+ * Quickstart: fetch, crawl and extract from a site.
+ *
+ * <p>Not part of the published jar. Run it with the SDK and Jackson on the
+ * class path (Java 21 launches a single source file directly):
  *
  * <pre>
  * export KLOAKD_API_KEY=sk-live-...
  * export KLOAKD_ORG_ID=your-org-uuid
- * mvn exec:java -Dexec.mainClass=dev.kloakd.examples.Quickstart
+ * mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt
+ * java -cp target/classes:$(cat cp.txt) examples/Quickstart.java
  * </pre>
  */
 public class Quickstart {
@@ -31,9 +32,10 @@ public class Quickstart {
 
         // Step 2: Site hierarchy (crawl() waits for the crawl and returns its pages)
         var crawl = client.webgrph().crawl(targetUrl, 2, 50, false, null);
-        System.out.printf("Found %d pages%n", crawl.totalPages());
+        System.out.printf("Crawl %s: %d pages%n", crawl.status(), crawl.pages().size());
 
-        // Step 3: Extract structured data (reuse Evadr artifact)
+        // Step 3: Extract structured data, reusing the Evadr artifact.
+        // The shorthand {"field": "css:selector"} is sent as {"fields": [{name, selector}]}.
         var data = client.kolektr().extract(targetUrl,
                 Map.of("title", "css:h3 a", "price", "css:p.price_color"),
                 fetch.artifactId(), null, null);

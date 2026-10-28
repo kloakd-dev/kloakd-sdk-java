@@ -208,7 +208,7 @@ class HandOffTest {
         var poll = server.takeRequest();
         assertEquals(HANDOFF_POLL, poll.getPath());
         assertEquals("Bearer " + TEST_API_KEY, poll.getHeader("Authorization"));
-        assertEquals("java/0.4.1", poll.getHeader("X-Kloakd-SDK"));
+        assertEquals("java/0.5.0", poll.getHeader("X-Kloakd-SDK"));
     }
 
     @Test

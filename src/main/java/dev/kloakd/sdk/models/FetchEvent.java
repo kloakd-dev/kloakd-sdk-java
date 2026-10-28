@@ -1,18 +1,27 @@
 package dev.kloakd.sdk.models;
 
-import java.util.Map;
-
 /**
- * SSE event yielded by Evadr.fetchStream().
+ * An event of an Evadr fetch job's stream ({@code evadr/jobs/{id}/events}).
+ * The API sends pipeline events when the job runs in the API's own process
+ * ({@link #pipelineEvent()} is set and {@code type} is its event type), and
+ * otherwise polls the job and sends {@code STATUS}, {@code COMPLETE},
+ * {@code FAILED} or {@code ERROR}.
  *
- * @param type event type (e.g. tier_attempt, done, error)
- * @param tier bypass tier being attempted
- * @param vendor anti-bot vendor detected, or null
- * @param metadata additional event metadata
+ * @param type {@code STATUS}, {@code COMPLETE}, {@code FAILED}, {@code ERROR},
+ *             or a pipeline event type ({@code pipeline_step}, ...)
+ * @param jobId the job, or null
+ * @param status the job's status ({@code STATUS} events) or the pipeline stage status, or null
+ * @param tierUsed the tier that fetched the page ({@code COMPLETE}), or null
+ * @param artifactId the fetched page's artifact ({@code COMPLETE}), or null
+ * @param error the error ({@code FAILED}, {@code ERROR}; a pipeline error's message), or null
+ * @param pipelineEvent the full pipeline event, or null for the polled events
  */
 public record FetchEvent(
         String type,
-        Integer tier,
-        String vendor,
-        Map<String, Object> metadata
+        String jobId,
+        String status,
+        Integer tierUsed,
+        String artifactId,
+        String error,
+        PipelineEvent pipelineEvent
 ) {}
