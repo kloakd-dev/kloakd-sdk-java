@@ -156,16 +156,6 @@ public final class WebgrphNamespace {
         return t.request("PATCH", "webgrph/sessions/" + sessionId + "/job", null, Map.of("job_id", jobId));
     }
 
-    // ── Analytics ────────────────────────────────────────────────────────────
-
-    public Map<String, Object> getDashboardSummary() { return t.get("webgrph/analytics/dashboard/summary", null); }
-    public Map<String, Object> getErrorSummary() { return t.get("webgrph/analytics/error-summary", null); }
-    public Map<String, Object> getJobTrends() { return t.get("webgrph/analytics/job-trends", null); }
-    public Map<String, Object> getDiscoveryPatterns() { return t.get("webgrph/analytics/content/discovery-patterns", null); }
-    public Map<String, Object> getEfficiencyMetrics() { return t.get("webgrph/analytics/scraping/efficiency-metrics", null); }
-    public Map<String, Object> getSiteMappingTrends() { return t.get("webgrph/analytics/site-maps/trends", null); }
-    public Map<String, Object> getUserBehaviorInsights() { return t.get("webgrph/analytics/users/behavior-insights", null); }
-
     static PageNode parsePageNode(Map<String, Object> m) {
         var meta = mapField(m, "metadata");
         return new PageNode(str(m, "id"), str(m, "url"), str(m, "parent_url"), integer(m, "depth"),

@@ -41,6 +41,18 @@ line, 0.73 branch under the same `mvn --batch-mode clean verify`.
   `deletePreference`, `getRecommendationStatistics`.
 - `kolektr().createJob` (`POST kolektr/jobs`, removed for the same reason).
   `listJobs` and `getJob` remain.
+- Kolektr's job-progress, phase and pipeline methods, whose routes the API
+  removed (they answered fixed values for any id): `getJobProgress`,
+  `getJobProgressSummary`, `getJobProgressEvents`, `getJobProgressLatest`,
+  `listProgressPhases`, `getProgressPhase`, `getProgressPhaseSteps`,
+  `getProgressSummary`, `getPipelineStream`, `getPipelineEvents`.
+- `webgrph().getJobTrends` and `getErrorSummary` (routes removed).
+- `evadr().listProfiles` (`GET evadr/profiles`, route removed);
+  `listVendors` remains.
+- `webgrph().getDashboardSummary`, `getDiscoveryPatterns`,
+  `getEfficiencyMetrics`, `getSiteMappingTrends`, `getUserBehaviorInsights`:
+  their routes still exist but serve the KLOAKD dashboard only and are not
+  part of the public API.
 
 ### Changed
 - `NexusExecuteResult` gains a seventh component (`executionResultId`); code

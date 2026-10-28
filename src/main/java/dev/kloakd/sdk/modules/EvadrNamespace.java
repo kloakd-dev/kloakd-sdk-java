@@ -145,11 +145,9 @@ public final class EvadrNamespace {
         return t.getStream("evadr/jobs/" + jobId + "/events", null);
     }
 
-    // ── Vendors and profiles ─────────────────────────────────────────────────
+    // ── Vendors ──────────────────────────────────────────────────────────────
 
     public Map<String, Object> listVendors() { return t.get("evadr/vendors", null); }
-
-    public Map<String, Object> listProfiles() { return t.get("evadr/profiles", null); }
 
     // ── Proxy management ─────────────────────────────────────────────────────
 

@@ -180,7 +180,8 @@ class LiveRoutesTest {
                 }
             }
         }
-        assertTrue(found >= 100, "found only " + found + " calls; the scan is broken");
+        // 0.4.0 makes 91 calls (0.3.0: 123; 32 went with removed routes).
+        assertTrue(found >= 85, "found only " + found + " calls; the scan is broken");
         assertEquals(List.of(), problems, "calls to routes that do not exist");
     }
 
@@ -199,8 +200,30 @@ class LiveRoutesTest {
                 "nexus/recommendations/* were removed from the API");
         assertFalse(lines.contains("POST\t/api/v1/organizations/{organization_id}/kolektr/jobs"),
                 "POST kolektr/jobs was removed from the API");
+        // kobe-scraper d7d25134: routes that answered invented results.
+        for (String gone : List.of("kolektr/jobs/{job_id}/progress", "kolektr/jobs/{job_id}/progress/summary",
+                "kolektr/jobs/{job_id}/progress/events", "kolektr/jobs/{job_id}/progress/latest",
+                "kolektr/progress/phases", "kolektr/progress/phases/{phase_name}",
+                "kolektr/progress/phases/{phase_name}/steps", "kolektr/progress/summary",
+                "kolektr/pipeline/{pipeline_id}/stream", "kolektr/pipeline/{pipeline_id}/events",
+                "webgrph/analytics/job-trends", "webgrph/analytics/error-summary", "evadr/profiles")) {
+            assertFalse(lines.contains("GET\t/api/v1/organizations/{organization_id}/" + gone), gone + " was removed");
+        }
+        assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/kolektr/jobs"));
         assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/kolektr/jobs/{job_id}"));
+        assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/evadr/vendors"));
         assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/handoff/{job_id}"));
+    }
+
+    @Test
+    void theSdkDoesNotCallTheDashboardOnlyAnalyticsRoutes() throws IOException {
+        // modules/webgrph/analytics_router.py serves the dashboard; the public
+        // API spec leaves /webgrph/analytics/ out (generate_public_openapi.py EXCLUDED).
+        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                assertFalse(Files.readString(file).contains("webgrph/analytics"), file.toString());
+            }
+        }
     }
 
     @Test
@@ -215,7 +238,22 @@ class LiveRoutesTest {
         }
         var kolektr = Arrays.stream(dev.kloakd.sdk.modules.KolektrNamespace.class.getMethods())
                 .map(java.lang.reflect.Method::getName).toList();
-        assertFalse(kolektr.contains("createJob"));
+        for (String gone : List.of("createJob", "getJobProgress", "getJobProgressEvents", "getJobProgressLatest",
+                "getJobProgressSummary", "getPipelineEvents", "getPipelineStream", "listProgressPhases",
+                "getProgressPhase", "getProgressPhaseSteps", "getProgressSummary")) {
+            assertFalse(kolektr.contains(gone), gone);
+        }
+        assertTrue(kolektr.contains("listJobs"));
         assertTrue(kolektr.contains("getJob"));
+        var webgrph = Arrays.stream(dev.kloakd.sdk.modules.WebgrphNamespace.class.getMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        for (String gone : List.of("getDashboardSummary", "getErrorSummary", "getJobTrends", "getDiscoveryPatterns",
+                "getEfficiencyMetrics", "getSiteMappingTrends", "getUserBehaviorInsights")) {
+            assertFalse(webgrph.contains(gone), gone);
+        }
+        var evadr = Arrays.stream(dev.kloakd.sdk.modules.EvadrNamespace.class.getMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        assertFalse(evadr.contains("listProfiles"));
+        assertTrue(evadr.contains("listVendors"));
     }
 }

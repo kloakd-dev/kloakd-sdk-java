@@ -77,22 +77,6 @@ public final class KolektrNamespace {
     public Map<String, Object> listJobs() { return t.get("kolektr/jobs", null); }
     public Map<String, Object> getJob(String jobId) { return t.get("kolektr/jobs/" + jobId, null); }
     public Map<String, Object> getJobStatus(String jobId) { return t.get("kolektr/extraction-jobs/" + jobId + "/status", null); }
-    public Map<String, Object> getJobProgress(String jobId) { return t.get("kolektr/jobs/" + jobId + "/progress", null); }
-    public Map<String, Object> getJobProgressEvents(String jobId) { return t.get("kolektr/jobs/" + jobId + "/progress/events", null); }
-    public Map<String, Object> getJobProgressLatest(String jobId) { return t.get("kolektr/jobs/" + jobId + "/progress/latest", null); }
-    public Map<String, Object> getJobProgressSummary(String jobId) { return t.get("kolektr/jobs/" + jobId + "/progress/summary", null); }
-
-    // ── Pipeline ─────────────────────────────────────────────────────────────
-
-    public Map<String, Object> getPipelineEvents(String pipelineId) { return t.get("kolektr/pipeline/" + pipelineId + "/events", null); }
-    public Map<String, Object> getPipelineStream(String pipelineId) { return t.get("kolektr/pipeline/" + pipelineId + "/stream", null); }
-
-    // ── Progress phases ──────────────────────────────────────────────────────
-
-    public Map<String, Object> listProgressPhases() { return t.get("kolektr/progress/phases", null); }
-    public Map<String, Object> getProgressPhase(String phaseName) { return t.get("kolektr/progress/phases/" + phaseName, null); }
-    public Map<String, Object> getProgressPhaseSteps(String phaseName) { return t.get("kolektr/progress/phases/" + phaseName + "/steps", null); }
-    public Map<String, Object> getProgressSummary() { return t.get("kolektr/progress/summary", null); }
 
     // ── Scraper config ───────────────────────────────────────────────────────
 

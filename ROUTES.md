@@ -18,8 +18,16 @@ Checked against kobe-scraper's routers (`src/kobe_scraper/modules/*/router.py`, 
 | `GET handoff/{job_id}` | new: the poll route of a hand-off (`poll_url`); not called directly |
 | `POST kolektr/jobs` | removed (route removed) |
 | `nexus/recommendations/*` (13 calls) | removed (routes removed) |
+| `GET kolektr/jobs/{id}/progress`, `…/progress/summary`, `…/progress/events`, `…/progress/latest` | removed (routes removed, kobe-scraper d7d25134) |
+| `GET kolektr/progress/phases`, `…/phases/{name}`, `…/phases/{name}/steps`, `GET kolektr/progress/summary` | removed (routes removed) |
+| `GET kolektr/pipeline/{id}/stream`, `…/events` | removed (routes removed) |
+| `GET webgrph/analytics/job-trends`, `…/error-summary` | removed (routes removed) |
+| `GET evadr/profiles` | removed (route removed); `GET evadr/vendors` stays |
+| `GET webgrph/analytics/dashboard/summary`, `…/content/discovery-patterns`, `…/scraping/efficiency-metrics`, `…/site-maps/trends`, `…/users/behavior-insights` | removed from the SDK: dashboard-only (`modules/webgrph/analytics_router.py`; `scripts/generate_public_openapi.py` EXCLUDED); routes kept in routes.tsv |
 
 The fixture also drops the standalone `recommendations/*` routes, which `api/app.py` no longer mounts.
+
+The 0.2.0 → 0.3.0 table below no longer lists the 18 calls removed in 0.4.0 (its counts are as of 0.3.0).
 
 ## 0.2.0 → 0.3.0
 
@@ -37,7 +45,6 @@ Checked against the backend's route list at kobe-scraper 4fb33ea4 (module router
 | `GET evadr/jobs/%s` | matches a live route | — |
 | `GET evadr/jobs/%s/events` | matches; behaviour fixed | SSE: now a stream (JobEvents) |
 | `GET evadr/vendors` | matches a live route | — |
-| `GET evadr/profiles` | matches a live route | — |
 | `GET evadr/proxies` | matches a live route | — |
 | `POST evadr/proxies` | matches a live route | — |
 | `DELETE evadr/proxies/%s` | matches a live route | — |
@@ -82,16 +89,6 @@ Checked against the backend's route list at kobe-scraper 4fb33ea4 (module router
 | `POST kolektr/jobs` | matches a live route | — |
 | `GET kolektr/jobs/%s` | matches a live route | — |
 | `GET kolektr/extraction-jobs/%s/status` | matches a live route | — |
-| `GET kolektr/jobs/%s/progress` | matches a live route | — |
-| `GET kolektr/jobs/%s/progress/events` | matches a live route | — |
-| `GET kolektr/jobs/%s/progress/latest` | matches a live route | — |
-| `GET kolektr/jobs/%s/progress/summary` | matches a live route | — |
-| `GET kolektr/pipeline/%s/events` | matches a live route | — |
-| `GET kolektr/pipeline/%s/stream` | matches a live route | — |
-| `GET kolektr/progress/phases` | matches a live route | — |
-| `GET kolektr/progress/phases/%s` | matches a live route | — |
-| `GET kolektr/progress/phases/%s/steps` | matches a live route | — |
-| `GET kolektr/progress/summary` | matches a live route | — |
 | `GET kolektr/scrapers` | matches a live route | — |
 | `POST kolektr/scrapers` | matches a live route | — |
 | `GET kolektr/scrapers/%s` | matches a live route | — |
@@ -147,10 +144,3 @@ Checked against the backend's route list at kobe-scraper 4fb33ea4 (module router
 | `GET webgrph/crawl/%s/pages` | matches; behaviour fixed | cursor/limit params |
 | `GET webgrph/hierarchy/%s` | route removed | removed (pages: GET webgrph/crawl/{id}/pages) |
 | `GET webgrph/jobs/%s` | route removed | removed (status: GET webgrph/crawl/{id}) |
-| `GET webgrph/analytics/dashboard/summary` | matches a live route | — |
-| `GET webgrph/analytics/error-summary` | matches a live route | — |
-| `GET webgrph/analytics/job-trends` | matches a live route | — |
-| `GET webgrph/analytics/content/discovery-patterns` | matches a live route | — |
-| `GET webgrph/analytics/scraping/efficiency-metrics` | matches a live route | — |
-| `GET webgrph/analytics/site-maps/trends` | matches a live route | — |
-| `GET webgrph/analytics/users/behavior-insights` | matches a live route | — |
