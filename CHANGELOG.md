@@ -5,6 +5,13 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-10-28
+
+The 0.4.0 code, published. 0.4.0's upload was refused by Maven Central
+("Bundle has content that does NOT have a .pom file: dev/kloakd/kloakd-sdk"):
+central-publishing-maven-plugin 0.5.0 left an artifact-level file in the
+bundle. The plugin is now 0.12.0. No API changes.
+
 ## [0.4.0] — 2026-10-28
 
 0.3.1 never reached Maven Central either: its release build stopped at the

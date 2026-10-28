@@ -36,7 +36,7 @@ import java.util.stream.StreamSupport;
  */
 public class HttpTransport {
 
-    static final String SDK_VERSION = "0.4.0";
+    static final String SDK_VERSION = "0.4.1";
     private static final Set<Integer> RETRYABLE = Set.of(429, 500, 502, 503, 504);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
