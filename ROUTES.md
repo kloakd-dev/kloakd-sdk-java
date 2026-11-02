@@ -1,5 +1,15 @@
 # Routes called by the Java SDK
 
+## 0.5.0 → 0.6.0
+
+Checked against kobe-scraper 1c74de2b. No routes added or removed (`src/test/resources/routes.tsv` unchanged); request fields added:
+
+| Call | Java method | 0.6.0 |
+|---|---|---|
+| `POST kolektr/extract`, `extract/html` | `kolektr().extract(url, ExtractOptions)`, `extractHtml(html, url, schema, itemSelector)` | `schema_spec.item_selector`; fields' `attribute` and `type` (`ExtractSchema`) (`modules/kolektr/router.py` `SchemaSpec`) |
+| `GET webgrph/crawl/{id}/pages` | `webgrph().getCrawlPages(crawlId, cursor, limit, includeGrouping)`, `waitForCrawl(..., includeGrouping)` | `include_grouping`; `limit` checked 1–1000 (`modules/webgrph/router.py` `get_crawl_pages`) |
+| any metered call | — | 409 `concurrent_limit` adds `active_requests` (`kernel/gateway/dependencies.py` `hold_work_slot`): `ConcurrencyLimitException.getActiveRequests()` |
+
 ## 0.4.1 → 0.5.0
 
 Checked against kobe-scraper e5f15f7d (`src/kobe_scraper/modules/*/router.py`, `kernel/sync_handoff.py`). Every route below is in `src/test/resources/routes.tsv`; `LiveRoutesTest` (which now also scans `requestList`, `requestBytes` and `requestText`) and `RouteMappingTest` check the SDK's calls. Path values are percent-encoded (`HttpTransport.seg`).

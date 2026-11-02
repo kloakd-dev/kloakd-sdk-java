@@ -5,7 +5,52 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] — unreleased
+## [0.6.0] — unreleased
+
+Support for the API changes deployed on 2 November 2026, checked against
+kobe-scraper 1c74de2b (deployed code 0bb0c6b5). No breaking changes: every
+0.5.0 call compiles and sends the same request. `mvn --batch-mode clean
+verify -Dgpg.skip` (JDK 21): 224 tests, line coverage 0.93, branch 0.81.
+
+### Added
+- Kolektr item selector (GAP-API-11): `schema_spec.item_selector` makes one
+  record per element it matches, each field read inside that element
+  (`modules/kolektr/router.py` `SchemaSpec`, `core/extraction/item_records.py`).
+  - `ExtractSchema`: a typed schema (`fields` of `ExtractSchema.Field(name,
+    selector, attribute, type)`, `itemSelector`, `pagination`, `maxPages`,
+    `outputFormat`) with a builder (`field`, `listField`, `itemSelector`) and
+    `toMap()` for the `schema(...)` / `extractSchema(...)` options. `build()`
+    rejects a blank item selector, an item selector with no fields and
+    `maxPages` outside 1–100 (the API's 422s).
+  - `ExtractOptions.itemSelector(...)` (new record component; the 0.5.0
+    seven-argument constructor is kept): sent as `schema_spec.item_selector`
+    with the shorthand or a full spec.
+  - `kolektr().extractHtml(html, url, schema, itemSelector)`.
+  - The shorthand map accepts an `"item_selector"` entry (string value),
+    sent as the spec's `item_selector` instead of a field.
+  - `KolektrNamespace.schemaSpec(schema, itemSelector)`.
+- Crawl pages (GAP-API-9/10): `webgrph().getCrawlPages(crawlId, cursor,
+  limit, includeGrouping)` and `waitForCrawl(crawlId, interval, timeout,
+  includeGrouping)` send `include_grouping=true` to include the hierarchy's
+  grouping folders; `PageNode.isGrouping()` reads `metadata.is_grouping`.
+  `getCrawlPages` checks `limit` (1–1000, `MAX_PAGES_LIMIT`; 0 for the API's
+  default of 100) and throws `IllegalArgumentException` outside it (the API
+  answers 422).
+- Work slots (GAP-BILL-13): `ConcurrencyLimitException.getActiveRequests()`
+  (`active_requests`, the other calls holding a slot) and a five-argument
+  constructor (the 0.5.0 one is kept).
+
+### Changed
+- Documentation: by default the pages route lists only fetched pages, and
+  the crawl status's `total_pages` / `max_depth_reached` (`CrawlResult.totalPages`,
+  `maxDepthReached`) count fetched pages only; the raw pages of a crawl's
+  `pipeline_complete` event carry `is_grouping` and `crawl_parent_url`;
+  a 409 `concurrent_limit` means every work slot is in use (Free 2, Starter 5,
+  Pro 10, Pro+ 20, Developer 50, Enterprise 100) and is still never retried.
+- Version 0.6.0 (`pom.xml`, `HttpTransport.SDK_VERSION`, so `User-Agent:
+  kloakd-sdk-java/0.6.0` and `X-Kloakd-SDK: java/0.6.0`).
+
+## [0.5.0] — 2026-10-28
 
 The 0.5.0 fixes shared by the four KLOAKD SDKs, checked against kobe-scraper
 e5f15f7d. `mvn --batch-mode clean verify -Dgpg.skip`: 211 tests, line

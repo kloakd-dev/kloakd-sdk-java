@@ -15,7 +15,7 @@ Maven (`pom.xml`):
 <dependency>
   <groupId>dev.kloakd</groupId>
   <artifactId>kloakd-sdk</artifactId>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
 </dependency>
 ```
 
@@ -23,7 +23,7 @@ Gradle (`build.gradle.kts`):
 
 ```kotlin
 dependencies {
-    implementation("dev.kloakd:kloakd-sdk:0.5.0")
+    implementation("dev.kloakd:kloakd-sdk:0.6.0")
 }
 ```
 
@@ -31,7 +31,7 @@ Gradle (Groovy `build.gradle`):
 
 ```groovy
 dependencies {
-    implementation 'dev.kloakd:kloakd-sdk:0.5.0'
+    implementation 'dev.kloakd:kloakd-sdk:0.6.0'
 }
 ```
 
@@ -144,6 +144,43 @@ var data = client.kolektr().extract("https://example.com/products", ExtractOptio
         .build());
 ```
 
+#### One record per item (`itemSelector`)
+
+On a list page, an item selector (CSS) makes one record per element it
+matches, and each field's selector is read inside that element: the first
+match gives the value (every match for a `list` field), its text or the
+named `attribute`; a field with no match in an item is `null`; a field with
+no selector reads the item element itself. Without an item selector the
+result is one record for the page, as before. A blank or invalid CSS item
+selector, or one without fields, is answered with 422
+(`ExtractSchema.build()` and `ExtractOptions.itemSelector` check the first
+two before sending).
+
+```java
+// Typed schema
+var schema = ExtractSchema.builder()
+        .itemSelector("article.product_pod")
+        .field("title", "h3 a", "title")        // the title attribute of the first match
+        .field("price", "p.price_color")        // its text
+        .field("link", "h3 a", "href")
+        .listField("tags", "ul.tags li")        // every match, as a list
+        .build();
+var books = client.kolektr().extract("https://books.toscrape.com", ExtractOptions.builder()
+        .schema(schema.toMap())
+        .build());
+books.records();   // one map per article.product_pod
+
+// Shorthand with an item selector
+client.kolektr().extract("https://books.toscrape.com", ExtractOptions.builder()
+        .schema(Map.of("title", "css:h3 a", "price", "p.price_color"))
+        .itemSelector("article.product_pod")
+        .build());
+// ... or in the shorthand map itself: {"item_selector": "article.product_pod", "title": "css:h3 a"}
+
+// HTML you already have
+client.kolektr().extractHtml(html, url, Map.of("title", "h3 a"), "article.product_pod");
+```
+
 ### Asynchronous (`CompletableFuture`)
 
 ```java
@@ -202,6 +239,22 @@ var started = client.webgrph().startCrawl("https://example.com", CrawlOptions.bu
 var done = client.webgrph().waitForCrawl(started.crawlId(), Duration.ofSeconds(3), Duration.ofMinutes(60));
 ```
 
+Pages are read from `webgrph/crawl/{id}/pages` (`getCrawlPages(crawlId,
+cursor, limit[, includeGrouping])`): `limit` is 1–1000 (0 for the API's
+default of 100; anything else throws `IllegalArgumentException`), and the
+cursor is the previous page's `next_cursor` (any other value is answered
+with 422). Only fetched pages are listed, each under the page the crawl found
+it on, and the crawl's `totalPages()` and `maxDepthReached()` count fetched
+pages only. `includeGrouping` (also on `waitForCrawl(id, interval, timeout,
+true)`) adds the hierarchy's grouping folders, which were never fetched:
+`PageNode.isGrouping()` (`metadata.is_grouping`) is true for them. The raw
+pages in a crawl's `pipeline_complete` event (`metadata.discovery_response.pages`)
+include the folders and carry `is_grouping` and `crawl_parent_url`.
+
+```java
+var page = client.webgrph().getCrawlPages(crawlId, null, 1000, true);
+```
+
 `client.crawl(url, options)` also fetches every page (and extracts it when
 `extractSchema` is set). Its `success()` and `error()` are the crawl's. A
 page that fails becomes a failed page, but billing and authentication
@@ -239,7 +292,7 @@ Kloakd client = Kloakd.builder()
     .build();
 ```
 
-Every request sends `User-Agent: kloakd-sdk-java/0.5.0`.
+Every request sends `User-Agent: kloakd-sdk-java/0.6.0`.
 
 ### Retries
 
@@ -252,6 +305,12 @@ Every request sends `User-Agent: kloakd-sdk-java/0.5.0`.
   `RateLimitException.isQuotaExhausted()` is true and it carries
   `getQuotaUsed()`, `getQuotaLimit()` and `getUpgradeUrl()`.
 - 503 `billing_unavailable` is retried on any method (nothing was started).
+- 409 `concurrent_limit` is never retried. Every metered call holds one of
+  the organisation's work slots while it runs, and running or queued crawls
+  and batches hold one each; the plan sets how many run at once (Free 2,
+  Starter 5, Pro 10, Pro+ 20, Developer 50, Enterprise 100). The exception
+  carries `getConcurrentLimit()`, `getActiveCrawls()`, `getActiveRequests()`
+  and `getTier()` (test keys report only the limit).
 - Otherwise backoff is 1 s × 2^attempt, at most 60 s.
 
 ## Error Handling
@@ -278,8 +337,9 @@ try {
     // 429 — still limited after the retries, or the playground quota
     System.out.println(e.isQuotaExhausted() ? "Quota used up" : "Retry after: " + e.getRetryAfter() + "s");
 } catch (ConcurrencyLimitException e) {
-    // 409 concurrent_limit — too many crawls running (not retried)
-    System.out.println("Limit " + e.getConcurrentLimit() + " for " + e.getTier());
+    // 409 concurrent_limit — all the organisation's work slots are in use (not retried)
+    System.out.println(e.getTier() + " runs " + e.getConcurrentLimit() + " at once: "
+            + e.getActiveCrawls() + " crawl(s)/batch(es), " + e.getActiveRequests() + " other call(s)");
 } catch (BillingUnavailableException e) {
     // 503 billing_unavailable — usage could not be checked; retry later
 } catch (JobFailedException e) {
