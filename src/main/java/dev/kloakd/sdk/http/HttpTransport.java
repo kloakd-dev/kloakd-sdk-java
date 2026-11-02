@@ -44,7 +44,7 @@ import java.util.stream.StreamSupport;
  */
 public class HttpTransport {
 
-    static final String SDK_VERSION = "0.5.0";
+    static final String SDK_VERSION = "0.6.0";
     /** The {@code User-Agent} every request sends. */
     public static final String USER_AGENT = "kloakd-sdk-java/" + SDK_VERSION;
     private static final Set<Integer> RETRYABLE = Set.of(429, 500, 502, 503, 504);
@@ -557,7 +557,7 @@ public class HttpTransport {
         }
         if (status == 409 && "concurrent_limit".equals(code)) {
             return new ConcurrencyLimitException(msg, intVal(detail, "concurrent_limit", 0),
-                    optInt(detail, "active_crawls"), str(detail, "tier"));
+                    optInt(detail, "active_crawls"), optInt(detail, "active_requests"), str(detail, "tier"));
         }
         if (status == 429 && "gb_exhausted".equals(code)) return new QuotaExceededException(msg, upgradeUrl,
                 dbl(detail, "residential_gb_used"), dbl(detail, "residential_gb_limit"),

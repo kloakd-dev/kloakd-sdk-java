@@ -10,7 +10,8 @@ import java.util.Map;
  * @param maxPages maximum pages to crawl (orchestrator default 100; 0 lets the API use the tier's default)
  * @param extractSchema the extraction schema for each fetched page, or null:
  *                      the shorthand {@code {"title": "css:h1"}} (prefix optional) or a full
- *                      {@code {"fields": [{"name", "selector", "attribute"?, "type"?}], ...}}
+ *                      {@code {"fields": [{"name", "selector", "attribute"?, "type"?}], "item_selector"?, ...}}
+ *                      ({@link ExtractSchema#toMap()} gives one)
  * @param includeExternalLinks whether to follow off-domain links
  * @param sessionArtifactId reuse an authenticated session artifact (from Fetchyr), or null
  * @param scope a CrawlScope ({@code same_host}, {@code allowed_domains}, {@code exclude_patterns}, ...), or null

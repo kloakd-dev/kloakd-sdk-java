@@ -13,6 +13,8 @@ import java.util.Map;
  * @param message human-readable text, or null
  * @param progressPct progress 0–100, or null
  * @param metadata extra data; on a crawl's {@code pipeline_complete} it may hold {@code discovery_response}
+ *                 ({@code pages}: the stored pages as maps, grouping folders included, each with
+ *                 {@code is_grouping} and {@code crawl_parent_url}, the page the crawl found it on)
  * @param error the structured error ({@code error_code}, {@code user_message}, ...), or null
  * @param sequence the event's sequence number (the stream's resume cursor), or null
  * @param pipelineId the crawl or job id, or null

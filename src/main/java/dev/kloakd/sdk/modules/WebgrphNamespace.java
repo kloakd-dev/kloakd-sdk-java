@@ -87,15 +87,25 @@ public final class WebgrphNamespace {
     public CrawlResult crawl(String url, CrawlOptions options, Duration pollInterval, Duration pollTimeout) {
         var started = startCrawl(url, options);
         if (started.crawlId() == null) return started;
-        return waitForCrawl(started.crawlId(), url, pollInterval, pollTimeout);
+        return waitForCrawl(started.crawlId(), url, pollInterval, pollTimeout, false);
     }
 
     /** Wait for a started crawl (by id) and return its pages; resumes after a {@link JobTimeoutException}. */
     public CrawlResult waitForCrawl(String crawlId, Duration pollInterval, Duration pollTimeout) {
-        return waitForCrawl(crawlId, null, pollInterval, pollTimeout);
+        return waitForCrawl(crawlId, null, pollInterval, pollTimeout, false);
     }
 
-    private CrawlResult waitForCrawl(String crawlId, String url, Duration pollInterval, Duration pollTimeout) {
+    /**
+     * {@link #waitForCrawl(String, Duration, Duration)}; with {@code includeGrouping}
+     * the pages also hold the hierarchy's grouping folders
+     * ({@link #getCrawlPages(String, String, int, boolean)}).
+     */
+    public CrawlResult waitForCrawl(String crawlId, Duration pollInterval, Duration pollTimeout, boolean includeGrouping) {
+        return waitForCrawl(crawlId, null, pollInterval, pollTimeout, includeGrouping);
+    }
+
+    private CrawlResult waitForCrawl(String crawlId, String url, Duration pollInterval, Duration pollTimeout,
+            boolean includeGrouping) {
         long deadline = System.nanoTime() + pollTimeout.toNanos();
         Map<String, Object> status;
         while (true) {
@@ -119,7 +129,7 @@ public final class WebgrphNamespace {
         if ("completed".equals(state)) {
             String cursor = null;
             do {
-                var page = getCrawlPages(crawlId, cursor, 500);
+                var page = getCrawlPages(crawlId, cursor, 500, includeGrouping);
                 for (var node : mapList(page, "nodes")) pages.add(parsePageNode(node));
                 total = integer(page, "total");
                 cursor = str(page, "next_cursor");
@@ -163,11 +173,39 @@ public final class WebgrphNamespace {
         return t.getStream("webgrph/crawl/" + seg(crawlId) + "/events", null);
     }
 
-    /** One page of discovered pages ({@code cursor} null for the first). */
+    /** Most pages one {@link #getCrawlPages} call returns ({@code limit}). */
+    public static final int MAX_PAGES_LIMIT = 1000;
+
+    /**
+     * One page of a crawl's fetched pages ({@code GET webgrph/crawl/{id}/pages}),
+     * as {@code {crawl_id, nodes, next_cursor, total}}.
+     *
+     * @param cursor null for the first page, else the previous page's {@code next_cursor}
+     *               (anything but a non-negative integer is answered with 422)
+     * @param limit nodes per page, 1–{@value #MAX_PAGES_LIMIT}, or 0 for the API default (100)
+     * @throws IllegalArgumentException {@code limit} is negative or above {@value #MAX_PAGES_LIMIT}
+     */
     public Map<String, Object> getCrawlPages(String crawlId, String cursor, int limit) {
+        return getCrawlPages(crawlId, cursor, limit, false);
+    }
+
+    /**
+     * {@link #getCrawlPages(String, String, int)}, optionally with the
+     * hierarchy's grouping folders. By default only fetched pages are
+     * listed, each under the page the crawl found it on, and {@code total}
+     * matches the crawl's {@code total_pages}. With {@code includeGrouping}
+     * the displayed tree is returned as stored: grouping folders (never
+     * fetched; {@code metadata.is_grouping} true, see {@link PageNode#isGrouping()})
+     * with grouped pages under them.
+     */
+    public Map<String, Object> getCrawlPages(String crawlId, String cursor, int limit, boolean includeGrouping) {
+        if (limit < 0 || limit > MAX_PAGES_LIMIT) {
+            throw new IllegalArgumentException("limit must be 1-" + MAX_PAGES_LIMIT + " (or 0 for the default), was " + limit);
+        }
         var params = new HashMap<String, String>();
         if (cursor != null) params.put("cursor", cursor);
         if (limit > 0) params.put("limit", String.valueOf(limit));
+        if (includeGrouping) params.put("include_grouping", "true");
         return t.get("webgrph/crawl/" + seg(crawlId) + "/pages", params);
     }
 

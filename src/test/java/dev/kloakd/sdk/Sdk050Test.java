@@ -70,14 +70,14 @@ class Sdk050Test {
         routes.json("GET evadr/vendors", 200, Map.of());
         client.evadr().listVendors();
         var req = server.takeRequest();
-        assertEquals("kloakd-sdk-java/0.5.0", req.getHeader("User-Agent"));
-        assertEquals("java/0.5.0", req.getHeader("X-Kloakd-SDK"));
+        assertEquals("kloakd-sdk-java/0.6.0", req.getHeader("User-Agent"));
+        assertEquals("java/0.6.0", req.getHeader("X-Kloakd-SDK"));
     }
 
     @Test
     void theVersionMatchesThePom() throws Exception {
-        assertTrue(Files.readString(Path.of("pom.xml")).contains("<version>" + "0.5.0" + "</version>"));
-        assertEquals("kloakd-sdk-java/0.5.0", HttpTransport.USER_AGENT);
+        assertTrue(Files.readString(Path.of("pom.xml")).contains("<version>" + "0.6.0" + "</version>"));
+        assertEquals("kloakd-sdk-java/0.6.0", HttpTransport.USER_AGENT);
     }
 
     // ── 8: retries ───────────────────────────────────────────────────────────

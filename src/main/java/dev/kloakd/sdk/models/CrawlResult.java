@@ -9,9 +9,9 @@ import java.util.List;
  * @param crawlId the crawl's ID
  * @param url the root URL
  * @param status the crawl's final status (completed, failed, cancelled), or null from startCrawl
- * @param totalPages pages discovered
- * @param maxDepthReached deepest level reached
- * @param pages every discovered page (empty from startCrawl or when not completed)
+ * @param totalPages pages fetched (grouping folders of the hierarchy are not counted)
+ * @param maxDepthReached deepest level of a fetched page
+ * @param pages every fetched page (empty from startCrawl or when not completed)
  * @param total page count reported by the pages route
  * @param artifactId the crawl's hierarchy artifact
  * @param error error message, or null

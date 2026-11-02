@@ -2,6 +2,7 @@ package dev.kloakd.sdk.modules;
 
 import dev.kloakd.sdk.http.HttpTransport;
 import dev.kloakd.sdk.models.ExtractOptions;
+import dev.kloakd.sdk.models.ExtractSchema;
 import dev.kloakd.sdk.models.ExtractionResult;
 
 import java.util.*;
@@ -24,7 +25,8 @@ public final class KolektrNamespace {
      * {@link #extract(String, ExtractOptions)} with these options.
      *
      * @param schemaSpec the fields to extract, or null: the shorthand
-     *                   {@code {"title": "css:h1"}} or a full {@code {"fields": [...]}} spec
+     *                   {@code {"title": "css:h1"}} (optionally with an
+     *                   {@code "item_selector"} entry) or a full {@code {"fields": [...]}} spec
      */
     public ExtractionResult extract(String url, Map<String, ?> schemaSpec,
             String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId) {
@@ -36,6 +38,11 @@ public final class KolektrNamespace {
      * Extract structured data from a URL ({@code POST kolektr/extract}). The
      * schema is sent as {@code schema_spec}: a shorthand {@code {field: "css:selector"}}
      * becomes {@code {"fields": [{"name", "selector"}]}} ({@link #schemaSpec}).
+     * {@link ExtractOptions#itemSelector()} (or {@code item_selector} in the
+     * schema) makes one record per element it matches, each field read inside
+     * that element; a typed {@link ExtractSchema} is passed as
+     * {@code schema(extractSchema.toMap())}. A blank or invalid CSS item
+     * selector, or one with no fields, is answered with 422.
      * The API answers within about 85 s; a request still running then is
      * handed off as a job (HTTP 202), which this follows to its result with
      * the client's poll settings ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval});
@@ -45,7 +52,7 @@ public final class KolektrNamespace {
     public ExtractionResult extract(String url, ExtractOptions o) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
-        var spec = schemaSpec(o.schema());
+        var spec = schemaSpec(o.schema(), o.itemSelector());
         if (spec != null) body.put("schema_spec", spec);
         if (o.level() != null) body.put("level", o.level());
         if (o.options() != null && !o.options().isEmpty()) body.put("options", o.options());
@@ -68,10 +75,20 @@ public final class KolektrNamespace {
 
     /** Extract from HTML you already have ({@code POST kolektr/extract/html}); the schema as for {@link #extract}. */
     public ExtractionResult extractHtml(String html, String url, Map<String, ?> schemaSpec) {
+        return extractHtml(html, url, schemaSpec, null);
+    }
+
+    /**
+     * {@link #extractHtml(String, String, Map)} with an item selector: one
+     * record per element {@code itemSelector} matches, each field read inside it.
+     *
+     * @param itemSelector CSS selector of the repeated item, or null
+     */
+    public ExtractionResult extractHtml(String html, String url, Map<String, ?> schemaSpec, String itemSelector) {
         var body = new HashMap<String, Object>();
         body.put("html", html);
         body.put("url", url);
-        var spec = schemaSpec(schemaSpec);
+        var spec = schemaSpec(schemaSpec, itemSelector);
         if (spec != null) body.put("schema_spec", spec);
         return parseExtractionResult(t.post("kolektr/extract/html", body));
     }
@@ -82,14 +99,21 @@ public final class KolektrNamespace {
      * {@code {name: "css:selector"}} (the {@code css:} prefix optional)
      * becomes {@code {"fields": [{"name": name, "selector": selector}]}}; a
      * shorthand value that is itself a map ({@code {"selector", "attribute", "type"}})
-     * becomes that field with its name. Null or empty gives null.
+     * becomes that field with its name. In the shorthand an {@code "item_selector"}
+     * entry with a string value is the spec's {@code item_selector} (since
+     * 0.6.0), not a field. Null or empty gives null.
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> schemaSpec(Map<String, ?> schema) {
         if (schema == null || schema.isEmpty()) return null;
         if (schema.get("fields") instanceof List<?>) return (Map<String, Object>) schema;
         var fields = new ArrayList<Map<String, Object>>();
+        String itemSelector = null;
         for (var e : schema.entrySet()) {
+            if (ITEM_SELECTOR.equals(e.getKey()) && e.getValue() instanceof String sel) {
+                itemSelector = sel;
+                continue;
+            }
             var field = new LinkedHashMap<String, Object>();
             field.put("name", e.getKey());
             if (e.getValue() instanceof Map<?, ?> m) {
@@ -101,7 +125,33 @@ public final class KolektrNamespace {
             }
             fields.add(field);
         }
-        return Map.of("fields", fields);
+        if (itemSelector == null) return Map.of("fields", fields);
+        var spec = new LinkedHashMap<String, Object>();
+        spec.put("fields", fields);
+        spec.put(ITEM_SELECTOR, itemSelector);
+        return spec;
+    }
+
+    private static final String ITEM_SELECTOR = "item_selector";
+
+    /**
+     * {@link #schemaSpec(Map)} with {@code itemSelector} set as the spec's
+     * {@code item_selector} (replacing one in {@code schema}); null leaves the
+     * spec as {@link #schemaSpec(Map)} gives it.
+     *
+     * @throws IllegalArgumentException {@code itemSelector} is blank, or given
+     *         without any field (the API answers both with 422)
+     */
+    public static Map<String, Object> schemaSpec(Map<String, ?> schema, String itemSelector) {
+        var spec = schemaSpec(schema);
+        if (itemSelector == null) return spec;
+        if (itemSelector.isBlank()) throw new IllegalArgumentException("itemSelector must not be blank");
+        if (spec == null || !(spec.get("fields") instanceof List<?> fs) || fs.isEmpty()) {
+            throw new IllegalArgumentException("itemSelector needs at least one field");
+        }
+        var out = new LinkedHashMap<String, Object>(spec);
+        out.put(ITEM_SELECTOR, itemSelector.strip());
+        return out;
     }
 
     // ── API data ──────────────────────────────────────────────────────────────
