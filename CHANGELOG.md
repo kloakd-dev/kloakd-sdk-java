@@ -5,7 +5,7 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] — unreleased
+## [0.6.0] — 2026-11-03
 
 Support for the API changes deployed on 2 November 2026, checked against
 kobe-scraper 1c74de2b (deployed code 0bb0c6b5). No breaking changes: every
