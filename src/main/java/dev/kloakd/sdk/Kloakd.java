@@ -6,6 +6,7 @@ import dev.kloakd.sdk.modules.*;
 import dev.kloakd.sdk.models.*;
 
 import java.net.http.HttpClient;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.stream.Stream;
@@ -96,6 +97,30 @@ public final class Kloakd {
      */
     public Map<String, Object> waitForHandoff(String jobId, Duration pollInterval, Duration pollTimeout) {
         return transport.followHandOff(jobId, "handoff/" + HttpTransport.seg(jobId), pollInterval, pollTimeout);
+    }
+
+    // ── Batch export ────────────────────────────────────────────────────────
+
+    /**
+     * A batch job's results as a file, streamed
+     * ({@code GET batch-jobs/{batch_job_id}/export}; kobe-scraper
+     * kernel/batch_export_router.py). Close the export when done.
+     *
+     * @param format {@code json}, {@code ndjson} or {@code csv}
+     * @throws IllegalArgumentException {@code format} is none of the three
+     */
+    public ExportDownload exportBatchJob(String batchJobId, String format) {
+        return ExportDownload.of(transport.download("batch-jobs/" + HttpTransport.seg(batchJobId) + "/export",
+                Map.of("format", ExportDownload.checkFormat(format))));
+    }
+
+    /**
+     * {@link #exportBatchJob(String, String)} written to {@code path}. The
+     * file is created once the API has answered 200, so a refused request
+     * leaves no file.
+     */
+    public SavedExport downloadBatchJob(String batchJobId, Path path, String format) {
+        return exportBatchJob(batchJobId, format).saveTo(path);
     }
 
     // ── High-level orchestrator ──────────────────────────────────────────────

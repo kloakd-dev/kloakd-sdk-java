@@ -1,5 +1,25 @@
 # Routes called by the Java SDK
 
+## 0.6.0 → unreleased
+
+Checked against kobe-scraper integration/2026-11-12 (e5e358aa). The route
+list in `src/test/resources/routes.tsv` was edited to match (one row
+removed, seven added), not regenerated. `LiveRoutesTest` now also scans
+`download(...)` calls.
+
+| Call | Java method | After 0.6.0 |
+|---|---|---|
+| `POST nexus/execute` | — | removed from the API (`modules/nexus/router.py`) and the SDK (`nexus().execute`) |
+| `POST nexus/knowledge` | — | no longer called (`nexus().knowledge` removed): the body is now `{strategy_id, url, outcome}` and the route is left out of the public API reference (`scripts/generate_public_openapi.py` EXCLUDED). Still in the route list |
+| `POST nexus/verify` | `nexus().verify` | response read for `status`, `risk_score`, `safety_checks`, `verification_result_id`, `duration_ms` as well (VerifyResponse) |
+| `POST webgrph/crawl-extract` | `webgrph().startCrawlExtract`, `crawlExtract` | new (`modules/webgrph/crawl_extract_router.py`) |
+| `GET webgrph/crawl-extract/{job_id}` | `getCrawlExtract`, `waitForCrawlExtract` | new |
+| `GET webgrph/crawl-extract/{job_id}/results` | `getCrawlExtractResults`, `crawlExtractAllResults` | new: `limit` (1–1000), `cursor`, `shape`, `page_type`, `kind` |
+| `GET webgrph/crawl-extract/{job_id}/pages` | `getCrawlExtractPages` | new: `limit`, `offset`, `status` |
+| `GET webgrph/crawl-extract/{job_id}/export` | `exportCrawlExtract`, `downloadCrawlExtract` | new: `format` (json, ndjson, csv), `shape`, `page_type`, `kind`; streamed |
+| `POST webgrph/crawl-extract/{job_id}/cancel` | `cancelCrawlExtract` | new |
+| `GET batch-jobs/{batch_job_id}/export` | `client.exportBatchJob`, `downloadBatchJob` | new: `format`; streamed (`kernel/batch_export_router.py`) |
+
 ## 0.5.0 → 0.6.0
 
 Checked against kobe-scraper 1c74de2b. No routes added or removed (`src/test/resources/routes.tsv` unchanged); request fields added:

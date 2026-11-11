@@ -158,10 +158,11 @@ class LiveRoutesTest {
                 }
             }
         }
-        var verbs = Map.of("get", "GET", "post", "POST", "put", "PUT", "patch", "PATCH", "delete", "DELETE",
-                "stream", "POST", "streamWithEvents", "POST", "postAsync", "POST", "getStream", "GET",
-                "postFollowing", "POST");
-        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|postFollowing|request|requestList|requestBytes|requestText|send)\\(\\s*"
+        var verbs = new HashMap<>(Map.of("get", "GET", "post", "POST", "put", "PUT", "patch", "PATCH",
+                "delete", "DELETE", "stream", "POST", "streamWithEvents", "POST", "postAsync", "POST",
+                "getStream", "GET", "postFollowing", "POST"));
+        verbs.put("download", "GET");
+        var call = Pattern.compile("\\bt\\.(get|post|put|patch|delete|stream|streamWithEvents|postAsync|getStream|postFollowing|download|request|requestList|requestBytes|requestText|send)\\(\\s*"
                 + "(?:\"(GET|POST|PUT|PATCH|DELETE)\",\\s*)?((?:\"[^\"]*\"|[A-Za-z_][\\w.()]*)(?:\\s*\\+\\s*(?:\"[^\"]*\"|[A-Za-z_][\\w.()]*))*)");
         int found = 0;
         var problems = new ArrayList<String>();

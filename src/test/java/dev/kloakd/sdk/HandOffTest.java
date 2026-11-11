@@ -79,10 +79,6 @@ class HandOffTest {
                         Map.of("strategy_id", "st-1", "program", "p"),
                         (Function<Kloakd, Object>) c -> c.nexus().synthesize("https://example.com", "<html/>", "prices"),
                         (Function<Object, Object>) r -> ((dev.kloakd.sdk.models.NexusSynthesisResult) r).strategyId(), "st-1"),
-                Arguments.of("nexus/execute", "handoff/job-1",
-                        Map.of("strategy_id", "st-1", "success", true, "execution_result_id", "er-1"),
-                        (Function<Kloakd, Object>) c -> c.nexus().execute("st-1", "https://example.com"),
-                        (Function<Object, Object>) r -> ((dev.kloakd.sdk.models.NexusExecuteResult) r).executionResultId(), "er-1"),
                 Arguments.of("evadr/fetch", "evadr/jobs/job-1",
                         Map.of("success", true, "url", "https://example.com", "tier_used", 3),
                         (Function<Kloakd, Object>) c -> c.evadr().fetch("https://example.com"),
@@ -114,11 +110,12 @@ class HandOffTest {
 
     @Test
     void aFailedJobThrowsJobFailedWithItsId() {
-        routes.json("POST nexus/execute", 202, accepted(HANDOFF_POLL));
-        routes.json("GET handoff/job-1", 200, Map.of("job_id", "job-1", "kind", "nexus.execute",
+        routes.json("POST nexus/synthesize", 202, accepted(HANDOFF_POLL));
+        routes.json("GET handoff/job-1", 200, Map.of("job_id", "job-1", "kind", "nexus.synthesize",
                 "status", "failed", "error", "Strategy Engine execution failed"));
 
-        var ex = assertThrows(JobFailedException.class, () -> client.nexus().execute("st-1", "https://example.com"));
+        var ex = assertThrows(JobFailedException.class,
+                () -> client.nexus().synthesize("https://example.com", "<html/>", "prices"));
         assertEquals("job-1", ex.getJobId());
         assertEquals("job_failed", ex.getCode());
         assertEquals("Strategy Engine execution failed", ex.getMessage());
