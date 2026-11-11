@@ -159,6 +159,74 @@ public final class FetchyrNamespace {
 
     public void terminateSession(String artifactId) { t.delete("fetchyr/sessions/" + seg(artifactId)); }
 
+    // ── Login sessions (your own account) ────────────────────────────────────
+
+    /** {@link #startLoginSession(String, LoginSessionOptions)} with the API's default method (interactive). */
+    public LoginSession startLoginSession(String targetUrl) {
+        return startLoginSession(targetUrl, null);
+    }
+
+    /**
+     * Start a session logged in with your own account
+     * ({@code POST fetchyr/login-sessions}). {@code interactive} (the
+     * default) answers 202 with status {@code waiting_for_login} and a
+     * {@code discoveryId}: follow it with {@link #getAuthChainStatus} and
+     * answer it with {@link #resumeAuthChainCredentials} and
+     * {@link #resumeAuthChainMfa}. {@code cookies} answers 201 with status
+     * {@code ready} and the {@code sessionArtifactId}. Only the options set
+     * are sent.
+     *
+     * @param targetUrl a page of the site that needs the login
+     * @param options   method, cookies, user agent and country, or null
+     * @throws dev.kloakd.sdk.errors.ApiException 422: {@code cookies} without cookies or a user
+     *         agent, none of the cookies is the site's, or a URL the API does not allow
+     */
+    public LoginSession startLoginSession(String targetUrl, LoginSessionOptions options) {
+        var body = new HashMap<String, Object>();
+        body.put("target_url", targetUrl);
+        if (options != null) {
+            if (options.method() != null) body.put("method", options.method());
+            if (options.cookies() != null) body.put("cookies", options.cookies());
+            if (options.userAgent() != null) body.put("user_agent", options.userAgent());
+            if (options.country() != null) body.put("country", options.country());
+        }
+        var m = t.post("fetchyr/login-sessions", body);
+        var next = new java.util.LinkedHashMap<String, String>();
+        for (var e : mapField(m, "next").entrySet()) {
+            if (e.getValue() instanceof String v) next.put(e.getKey(), v);
+        }
+        return new LoginSession(str(m, "method"), str(m, "status"), str(m, "target_url"),
+                str(m, "discovery_id"), str(m, "session_artifact_id"),
+                java.util.Collections.unmodifiableMap(next), optInt(m, "cookies_kept"),
+                strList(m, "cookies_dropped"), mapField(m, "protections"), str(m, "message"));
+    }
+
+    /**
+     * A stored session's state ({@code GET fetchyr/sessions/{artifact_id}}):
+     * whether it is active or paused, why, and what it presents.
+     */
+    public SessionStatus getSession(String artifactId) {
+        return parseSessionStatus(t.get("fetchyr/sessions/" + seg(artifactId), null));
+    }
+
+    /**
+     * Put a paused session back in use
+     * ({@code POST fetchyr/sessions/{artifact_id}/resume}).
+     *
+     * @throws dev.kloakd.sdk.errors.ApiException 409: the session is not paused, or it was
+     *         paused as {@code logged_out} (log in again with {@link #startLoginSession})
+     */
+    public SessionStatus resumeSession(String artifactId) {
+        return parseSessionStatus(t.post("fetchyr/sessions/" + seg(artifactId) + "/resume", null));
+    }
+
+    static SessionStatus parseSessionStatus(Map<String, Object> m) {
+        return new SessionStatus(str(m, "artifact_id"), str(m, "status"), str(m, "target_domain"),
+                str(m, "auth_method"), str(m, "created_at"), str(m, "expires_at"), str(m, "last_used_at"),
+                str(m, "paused_at"), str(m, "pause_reason"), str(m, "pause_message"),
+                mapField(m, "identity"), optInt(m, "requests_this_hour"), mapField(m, "protections"));
+    }
+
     // ── Form filling ─────────────────────────────────────────────────────────
 
     /** Fill and submit a form ({@code POST fetchyr/form/fill}). The API answers within about

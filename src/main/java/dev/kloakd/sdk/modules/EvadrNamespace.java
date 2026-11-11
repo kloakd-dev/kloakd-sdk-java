@@ -250,6 +250,11 @@ public final class EvadrNamespace {
         return v instanceof Number n ? n.intValue() : null;
     }
 
+    static Boolean optBool(Map<String, Object> m, String key) {
+        var v = m.get(key);
+        return v instanceof Boolean b ? b : null;
+    }
+
     static double dbl(Map<String, Object> m, String key) {
         var v = m.get(key);
         return v instanceof Number n ? n.doubleValue() : 0.0;

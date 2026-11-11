@@ -70,10 +70,21 @@ public final class NexusNamespace {
 
     /** {@link #reason(String, List)} about a prior analysis ({@code perceptionId} may be null). */
     public Map<String, Object> reason(String queryType, List<String> parameters, String perceptionId) {
+        return reason(queryType, parameters, perceptionId, null);
+    }
+
+    /**
+     * {@link #reason(String, List, String)} with a time limit for the query
+     * in seconds ({@code timeout_secs}; null is not sent and the API's own
+     * limit applies).
+     */
+    public Map<String, Object> reason(String queryType, List<String> parameters, String perceptionId,
+            Double timeoutSecs) {
         var body = new HashMap<String, Object>();
         body.put("query_type", queryType);
         body.put("parameters", parameters != null ? parameters : List.of());
         if (perceptionId != null) body.put("perception_id", perceptionId);
+        if (timeoutSecs != null) body.put("timeout_secs", timeoutSecs);
         return t.post("nexus/reason", body);
     }
 

@@ -29,8 +29,8 @@ import static dev.kloakd.sdk.TestHelpers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * After 0.6.0 (kobe-scraper integration/2026-11-12): crawl-extract, its
- * downloads and the batch export. Every answer here is a mock's.
+ * After 0.6.0: crawl-extract, its downloads and the batch export. The route
+ * list is kobe-scraper main 6bd19e9b's. Every answer here is a mock's.
  */
 class ContractV2Test {
 
@@ -81,7 +81,10 @@ class ContractV2Test {
         for (String route : List.of("POST" + p + CE, "GET" + p + CE + "/{job_id}",
                 "GET" + p + CE + "/{job_id}/results", "GET" + p + CE + "/{job_id}/pages",
                 "GET" + p + CE + "/{job_id}/export", "POST" + p + CE + "/{job_id}/cancel",
-                "GET" + p + "batch-jobs/{batch_job_id}/export")) {
+                "GET" + p + "batch-jobs/{batch_job_id}/export",
+                "POST" + p + "webgrph/crawl/{crawl_id}/continue", "POST" + p + "fetchyr/login-sessions",
+                "GET" + p + "fetchyr/sessions/{artifact_id}",
+                "POST" + p + "fetchyr/sessions/{artifact_id}/resume")) {
             assertTrue(lines.contains(route), route);
         }
         assertFalse(lines.contains("POST" + p + "nexus/execute"), "POST nexus/execute was removed from the API");
@@ -429,7 +432,8 @@ class ContractV2Test {
 
         try (ExportDownload export = client.exportBatchJob("b-1", "csv")) {
             assertEquals("batch-b-1.csv", export.filename());
-            assertNull(export.jobStatus());
+            assertNull(export.jobStatus(), "the batch export sends no X-Job-Status");
+            assertNull(export.crawl(), "nor any X-Crawl-* header");
             assertTrue(new String(export.body().readAllBytes(), StandardCharsets.UTF_8).startsWith("url,status"));
         }
         assertEquals("csv", query("format"));
@@ -460,8 +464,14 @@ class ContractV2Test {
                 .map(java.lang.reflect.Method::getName).toList();
         for (String name : List.of("startCrawlExtract", "crawlExtract", "getCrawlExtract", "waitForCrawlExtract",
                 "getCrawlExtractResults", "crawlExtractAllResults", "getCrawlExtractPages", "exportCrawlExtract",
-                "downloadCrawlExtract", "cancelCrawlExtract")) {
+                "downloadCrawlExtract", "cancelCrawlExtract", "waitForCrawl", "continueCrawl",
+                "isCrawlExtractHeld")) {
             assertTrue(webgrph.contains(name), name);
+        }
+        var fetchyr = Arrays.stream(dev.kloakd.sdk.modules.FetchyrNamespace.class.getMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        for (String name : List.of("startLoginSession", "getSession", "resumeSession")) {
+            assertTrue(fetchyr.contains(name), name);
         }
         assertEquals(List.of("json", "ndjson", "csv"), ExportDownload.FORMATS);
     }

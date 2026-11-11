@@ -181,8 +181,9 @@ class LiveRoutesTest {
                 }
             }
         }
-        // 0.5.0 makes 113 calls (0.4.0: 91; 0.3.0: 123).
-        assertTrue(found >= 110, "found only " + found + " calls; the scan is broken");
+        // 0.5.0 made 113 calls (0.4.0: 91; 0.3.0: 123); with crawl continue and
+        // the three login-session calls the scan finds 118.
+        assertTrue(found >= 115, "found only " + found + " calls; the scan is broken");
         assertEquals(List.of(), problems, "calls to routes that do not exist");
     }
 
@@ -210,6 +211,10 @@ class LiveRoutesTest {
                 "webgrph/analytics/job-trends", "webgrph/analytics/error-summary", "evadr/profiles")) {
             assertFalse(lines.contains("GET\t/api/v1/organizations/{organization_id}/" + gone), gone + " was removed");
         }
+        // The five dashboard analytics routes are gone too (kobe-scraper 6bd19e9b has
+        // no modules/webgrph/analytics_router.py): no webgrph/analytics route is left.
+        assertTrue(lines.stream().noneMatch(l -> l.contains("/webgrph/analytics/")),
+                "webgrph/analytics/* were removed from the API");
         assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/kolektr/jobs"));
         assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/kolektr/jobs/{job_id}"));
         assertTrue(lines.contains("GET\t/api/v1/organizations/{organization_id}/evadr/vendors"));
@@ -217,9 +222,9 @@ class LiveRoutesTest {
     }
 
     @Test
-    void theSdkDoesNotCallTheDashboardOnlyAnalyticsRoutes() throws IOException {
-        // modules/webgrph/analytics_router.py serves the dashboard; the public
-        // API spec leaves /webgrph/analytics/ out (generate_public_openapi.py EXCLUDED).
+    void theSdkDoesNotCallTheRemovedAnalyticsRoutes() throws IOException {
+        // The API has no webgrph/analytics routes any more (the route list has none;
+        // removedRoutesAreAbsentAndTheHandOffPollRouteIsPresent checks it).
         try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
                 assertFalse(Files.readString(file).contains("webgrph/analytics"), file.toString());

@@ -104,7 +104,9 @@ public final class Kloakd {
     /**
      * A batch job's results as a file, streamed
      * ({@code GET batch-jobs/{batch_job_id}/export}; kobe-scraper
-     * kernel/batch_export_router.py). Close the export when done.
+     * kernel/batch_export_router.py). Close the export when done. This route
+     * sends neither {@code X-Job-Status} nor {@code X-Crawl-*} headers, so
+     * the export's {@code jobStatus()} and {@code crawl()} are null.
      *
      * @param format {@code json}, {@code ndjson} or {@code csv}
      * @throws IllegalArgumentException {@code format} is none of the three
@@ -130,6 +132,10 @@ public final class Kloakd {
      * structured data from all pages on a site in a single call.
      *
      * <p>The result's {@code success} and {@code error} are the crawl's own.
+     * A crawl held because the organisation's quota ran out fetches nothing:
+     * the result has {@code held} true, {@code status} {@code held_quota} and
+     * the API's {@code message}; wait for it later with
+     * {@code webgrph().waitForCrawl(result.crawlId())}.
      * A page that cannot be fetched or extracted becomes a failed page, but
      * billing and authentication errors ({@link PaymentRequiredException},
      * {@link QuotaExceededException}, {@link BillingUnavailableException},
@@ -205,7 +211,8 @@ public final class Kloakd {
                 finished = true;
                 var result = new SiteCrawlResult(crawlResult.success(), url, total, fetched, failed,
                         Collections.unmodifiableList(new ArrayList<>(pages)), crawlResult.artifactId(),
-                        crawlResult.error());
+                        crawlResult.error(), crawlResult.crawlId(), crawlResult.status(),
+                        crawlResult.message(), crawlResult.held());
                 pending.add(new CrawlProgressEvent("crawl_complete", url, null, total, crawlResult.success(),
                         crawlResult.error(), Map.of("result", result)));
                 return true;

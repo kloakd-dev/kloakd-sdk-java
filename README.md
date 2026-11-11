@@ -67,9 +67,9 @@ data.records().forEach(System.out::println);
 | `client.evadr()` | Anti-bot fetch, analysis, proxy storage |
 | `client.webgrph()` | Site crawl, crawl pages and events, detected APIs, reader view, sessions |
 | `client.skanyr()` | Synced sites, resources, search, extraction |
-| `client.nexus()` | AI page analysis, strategy synthesis, execution |
+| `client.nexus()` | AI page analysis, strategy synthesis, verification, reasoning |
 | `client.parlyr()` | Natural language → scrape intent parsing |
-| `client.fetchyr()` | Authenticated browser sessions, workflows |
+| `client.fetchyr()` | Login sessions, authenticated browser sessions, workflows |
 | `client.kolektr()` | Structured data extraction |
 
 ## API Patterns
@@ -220,7 +220,9 @@ try (var events = client.parlyr().chatStream("session-1", "start")) {
 ### Crawls
 
 Crawls run asynchronously. `crawl` starts one, waits for it and reads every
-page by cursor; `startCrawl` returns at once with the crawl ID.
+page by cursor; `startCrawl` returns at once with the crawl ID and no status
+(`POST webgrph/crawl` does not answer with one: `status()` is null until a
+wait or `getCrawlStatus` reads it).
 
 ```java
 List<PageNode> pages = client.webgrph().crawlAll("https://example.com", 3, 500);
@@ -230,7 +232,51 @@ var started = client.webgrph().startCrawl("https://example.com", CrawlOptions.bu
         .captureMode("content")
         .buildAsSet());                  // unset limits are not sent: the tier's defaults apply
 var done = client.webgrph().waitForCrawl(started.crawlId(), Duration.ofSeconds(3), Duration.ofMinutes(60));
+done = client.webgrph().waitForCrawl(started.crawlId());   // the same wait with the defaults (3 s, 60 min)
 ```
+
+`waitForCrawl` takes only the crawl ID, so a crawl started elsewhere (or in
+an earlier run) can be waited for. The status route does not return the
+crawl's URL: `url()` is null on a result read by ID, and is the URL you
+passed on a result from `crawl(url, ...)`.
+
+**Held crawls.** When the organisation's bandwidth allowance is used up the
+API pauses the crawl with status `held_quota` and resumes it itself when the
+allowance returns. A held crawl has not ended, so the waits stop and return
+it instead of polling to the timeout:
+
+```java
+CrawlResult r = client.webgrph().crawl("https://example.com", CrawlOptions.builder().buildAsSet());
+if (r.held()) {
+    // r.status() is "held_quota", r.message() is the API's text, r.error() is null,
+    // r.success() is false and r.pages() is empty.
+    // Later: client.webgrph().waitForCrawl(r.crawlId())
+}
+```
+
+`crawlAll` returns an empty list for a held crawl, and `client.crawl(url,
+options)` returns a `SiteCrawlResult` with `held()` true, `crawlId()`,
+`status()` and `message()`, and fetches nothing. Check `held()` before
+reading an empty result as a site with no pages.
+
+**Partial crawls and continue.** The status says how the crawl ended:
+`isPartial()`, `partialReason()`, `resumable()`, `pagesDiscovered()`,
+`pagesFetched()`, `pagesUnfetched()` and `errorCode()` (each null when the
+API did not report it). A crawl that stopped at its time budget ends
+`completed` with `isPartial()` and `resumable()` true; `continueCrawl` puts
+it back in the queue with a new time budget, and pages already fetched are
+not fetched again:
+
+```java
+if (Boolean.TRUE.equals(done.resumable())) {
+    client.webgrph().continueCrawl(done.crawlId());        // 202: status "queued"
+    done = client.webgrph().waitForCrawl(done.crawlId());
+}
+```
+
+`continueCrawl` throws `ApiException` (409) when the crawl is not one that
+stopped at its time budget, has not ended, or is already being continued.
+An ID the API does not know is answered the same way (409, not 404).
 
 Pages are read from `webgrph/crawl/{id}/pages` (`getCrawlPages(crawlId,
 cursor, limit[, includeGrouping])`): `limit` is 1–1000 (0 for the API's
@@ -243,13 +289,17 @@ true)`) adds the hierarchy's grouping folders, which were never fetched:
 `PageNode.isGrouping()` (`metadata.is_grouping`) is true for them. The raw
 pages in a crawl's `pipeline_complete` event (`metadata.discovery_response.pages`)
 include the folders and carry `is_grouping` and `crawl_parent_url`.
+`PageNode.fetchStatus()` and `fetchError()` read `metadata.fetch_status` and
+`metadata.fetch_error` (null when the page has neither).
 
 ```java
 var page = client.webgrph().getCrawlPages(crawlId, null, 1000, true);
 ```
 
 `client.crawl(url, options)` also fetches every page (and extracts it when
-`extractSchema` is set). Its `success()` and `error()` are the crawl's. A
+`extractSchema` is set). Its `success()` and `error()` are the crawl's.
+`CrawlOptions.builder().build()` fills the orchestrator's own defaults
+(depth 3, 100 pages) and sends them; `buildAsSet()` sends only what was set. A
 page that fails becomes a failed page, but billing and authentication
 errors (`PaymentRequiredException`, `QuotaExceededException`,
 `BillingUnavailableException`, `NotEntitledException`,
@@ -268,9 +318,11 @@ Map<String, Object> job = client.webgrph().startCrawlExtract("https://example.co
                 "fields", List.of(Map.of("name", "title", "selector", "h3")))));
 String jobId = (String) job.get("job_id");
 Map<String, Object> status = client.webgrph().waitForCrawlExtract(jobId);   // polls to the end
-// status.get("status"), status.get("progress"), status.get("shapes")
+// status.get("status"), status.get("progress"), status.get("shapes"),
+// status.get("crawl") (the job's crawl), status.get("held") (added by the SDK)
 
-// or start and wait in one call (throws JobFailedException when the job fails)
+// or start and wait in one call (throws JobFailedException when the job fails;
+// a held job is returned, not thrown)
 status = client.webgrph().crawlExtract("https://example.com", null, null);
 
 // Rows, a page at a time (limit 1-1000, 0 for the default) or all of them
@@ -295,9 +347,35 @@ API's own object: `entity_type`, `fields` (a list of names) or `schema`
 (`item_selector` and `fields` of `{name, selector, attribute, type}`);
 null lets the API choose what to extract. `waitForCrawlExtract` polls every
 3 s for at most 60 min by default and throws `JobTimeoutException` while the
-job still runs; a cancelled job is returned, not thrown. An export of a job
-that has not completed holds the rows stored so far (`jobStatus()`). The CSV
-starts with a UTF-8 byte order mark. A refused download leaves no file.
+job still runs; a cancelled job is returned, not thrown.
+
+The status carries a `crawl` object for the job's crawl (null until the
+crawl has a state): `status`, `is_partial`, `partial_reason`,
+`pages_discovered`, `pages_fetched`, `pages_unfetched`, `cancelled`,
+`root_unfetched`. When `crawl.status` is `held_quota` the job is waiting for
+the organisation's allowance; the job's own `status` stays as it was.
+`waitForCrawlExtract` and `crawlExtract` then stop and return the status
+with `"held": true` (a key the SDK adds; it is `false` on every other
+return). `WebgrphNamespace.isCrawlExtractHeld(status)` reads the same thing
+from a status fetched with `getCrawlExtract`.
+
+An export of a job that has not completed holds the rows stored so far
+(`jobStatus()`, from the `X-Job-Status` header). The export also says how
+the crawl ended, from its `X-Crawl-*` headers:
+
+```java
+try (ExportDownload export = client.webgrph().exportCrawlExtract(jobId, "csv")) {
+    ExportCrawl crawl = export.crawl();     // null when the API sent no X-Crawl-* header
+    if (crawl != null && Boolean.TRUE.equals(crawl.isPartial())) {
+        // crawl.partialReason(), crawl.pagesFetched(), crawl.pagesUnfetched(),
+        // crawl.pagesDiscovered(), crawl.status(), crawl.cancelled(), crawl.rootUnfetched()
+    }
+}
+```
+
+`SavedExport.crawl()` holds the same for a download written to a file. A
+header the API did not send is null. The CSV starts with a UTF-8 byte order
+mark. A refused download leaves no file.
 
 A batch job's results download the same way:
 
@@ -307,6 +385,48 @@ try (ExportDownload export = client.exportBatchJob(batchJobId, "csv")) {
     byte[] data = export.readAllBytes();
 }
 ```
+
+The batch export sends no `X-Job-Status` and no `X-Crawl-*` header:
+`jobStatus()` and `crawl()` are null for it.
+
+### Login sessions
+
+A login session lets later requests run as a logged-in account
+(`fetchyr()`). There are two ways to make one.
+
+```java
+// 1. Interactive (the default): the API opens the site's login and waits.
+LoginSession s = client.fetchyr().startLoginSession("https://shop.example/account");
+// s.status() is "waiting_for_login"; s.discoveryId() and s.next() name the
+// auth-chain calls that take the credentials (getAuthChainStatus,
+// resumeAuthChainCredentials, resumeAuthChainMfa).
+
+// 2. Cookies from your own browser. user_agent is required with cookies.
+LoginSession ready = client.fetchyr().startLoginSession("https://shop.example/account",
+        LoginSessionOptions.builder()
+                .method("cookies")
+                .cookies(exportedCookies)            // List<Map<String, Object>>: name, value, domain, ...
+                .userAgent(browserUserAgent)
+                .country("KE")
+                .build());
+// ready.status() is "ready"; ready.sessionArtifactId() is the session;
+// ready.cookiesKept() and ready.cookiesDropped() say which cookies were used.
+
+SessionStatus status = client.fetchyr().getSession(ready.sessionArtifactId());
+// status.status(), pausedAt(), pauseReason(), pauseMessage(), expiresAt(),
+// requestsThisHour(), protections(), identity()
+if ("paused".equals(status.status())) {
+    status = client.fetchyr().resumeSession(status.artifactId());
+}
+```
+
+Only the options you set are sent. The interactive answer is a 202 and the
+cookies answer a 201; both are returned as they are (the 202 is not a
+hand-off to poll). A request the API refuses is an `ApiException` (422).
+`resumeSession` throws `ApiException` (409) when the session is not paused
+or the site signed it out (log in again). `getSession` here takes the
+session's artifact ID; `webgrph().getSession(sessionId)` is a different,
+older route.
 
 ### Lists and paging
 
@@ -419,8 +539,19 @@ java -cp target/classes:$(cat cp.txt) examples/Quickstart.java
 
 ```bash
 mvn test
-mvn --batch-mode clean verify -Dgpg.skip   # the release build: tests, Javadoc, JaCoCo check
+mvn --batch-mode clean verify -Dgpg.skip   # tests, the jars, Javadoc, JaCoCo report and check
 ```
+
+- The code is compiled for Java 21 (`pom.xml` `<release>21</release>`). Maven
+  uses the JDK it runs on (`mvn -v` shows it), which need not be the `java`
+  on your PATH.
+- `verify` without `-Dgpg.skip` also signs the jars with gpg. It needs a
+  signing key and a terminal for the passphrase; with neither it stops at
+  the signing step and waits. Use `-Dgpg.skip` for anything but a release.
+- JaCoCo 0.8.12 runs with the tests and fails the build under 75% line or
+  60% branch coverage. On a JDK newer than it knows (JDK 25) it prints
+  "Unsupported class file major version" stack traces for the JDK's own
+  classes; the SDK's classes are still measured and the check still runs.
 
 ## License
 

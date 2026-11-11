@@ -18,6 +18,9 @@ import java.util.Map;
  * @param authRequired true when the target is a login page; the API then
  *                     started an auth-chain discovery ({@code discoveryId})
  * @param discoveryId the auth-chain discovery, or null
+ * @param level the extraction level used ({@code level1}, {@code level2}), or null
+ * @param levelReason why that level was used, or null
+ * @param loginOptions for a login page, the ways to log in the API offers, or null
  */
 public record ExtractionResult(
         boolean success,
@@ -30,5 +33,16 @@ public record ExtractionResult(
         String jobId,
         String error,
         boolean authRequired,
-        String discoveryId
-) {}
+        String discoveryId,
+        String level,
+        String levelReason,
+        Map<String, Object> loginOptions
+) {
+    /** The 0.6.0 components only. */
+    public ExtractionResult(boolean success, String url, String method, List<Map<String, Object>> records,
+            int totalRecords, int pagesScraped, String artifactId, String jobId, String error,
+            boolean authRequired, String discoveryId) {
+        this(success, url, method, records, totalRecords, pagesScraped, artifactId, jobId, error,
+                authRequired, discoveryId, null, null, null);
+    }
+}

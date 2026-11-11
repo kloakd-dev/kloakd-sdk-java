@@ -282,12 +282,13 @@ class Sdk050Test {
 
     @Test
     void waitForCrawlResumes() {
-        routes.json("GET webgrph/crawl/c9", 200, Map.of("status", "completed", "url", "https://example.com",
-                "total_pages", 0));
+        // The status body has no url (kobe-scraper modules/webgrph/router.py CrawlStatusResponse).
+        routes.json("GET webgrph/crawl/c9", 200, Map.of("crawl_id", "c9", "status", "completed", "total_pages", 0));
         routes.json("GET webgrph/crawl/c9/pages", 200, Map.of("nodes", List.of(), "total", 0));
         var r = client.webgrph().waitForCrawl("c9", Duration.ofMillis(1), Duration.ofSeconds(5));
         assertTrue(r.success());
-        assertEquals("https://example.com", r.url());
+        assertEquals("c9", r.crawlId());
+        assertNull(r.url());
     }
 
     // ── 3: extraction schema ─────────────────────────────────────────────────

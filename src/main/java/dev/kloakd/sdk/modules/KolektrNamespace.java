@@ -252,6 +252,8 @@ public final class KolektrNamespace {
                 mapList(m, "records"), integer(m, "total_records"),
                 integer(m, "pages_scraped"),
                 nestedArtifactId(m), str(m, "job_id"), str(m, "error"),
-                bool(m, "auth_required"), str(m, "discovery_id"));
+                bool(m, "auth_required"), str(m, "discovery_id"),
+                str(m, "level"), str(m, "level_reason"),
+                m.get("login_options") instanceof Map<?, ?> ? mapField(m, "login_options") : null);
     }
 }

@@ -20,6 +20,8 @@ public final class WebgrphNamespace {
     public static final Duration DEFAULT_POLL_INTERVAL = Duration.ofSeconds(3);
     /** Default limit on waiting for a crawl. */
     public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMinutes(60);
+    /** The status of a crawl paused because the organisation's quota ran out. */
+    public static final String HELD_QUOTA = "held_quota";
 
     private final HttpTransport t;
 
@@ -27,8 +29,10 @@ public final class WebgrphNamespace {
 
     /**
      * Start a site crawl; it answers at once (HTTP 202) with its crawl ID.
-     * Follow it with {@link #getCrawlStatus}, {@link #crawlEvents} or use {@link #crawl}.
-     * A limit of 0 is not sent: the API applies the tier's default.
+     * Follow it with {@link #waitForCrawl(String)}, {@link #getCrawlStatus},
+     * {@link #crawlEvents} or use {@link #crawl}. A limit of 0 is not sent:
+     * the API applies the plan's default. The result's {@code status} is
+     * null: the answer has none.
      */
     public CrawlResult startCrawl(String url, int maxDepth, int maxPages,
             boolean includeExternalLinks, String sessionArtifactId) {
@@ -43,7 +47,8 @@ public final class WebgrphNamespace {
      */
     public CrawlResult startCrawl(String url, CrawlOptions o) {
         var m = t.post("webgrph/crawl", crawlBody(url, o));
-        return new CrawlResult(bool(m, "success"), str(m, "crawl_id"), str(m, "url"), str(m, "status"),
+        // CrawlResponse has no status (kobe-scraper modules/webgrph/router.py)
+        return new CrawlResult(bool(m, "success"), str(m, "crawl_id"), str(m, "url"), null,
                 integer(m, "total_pages"), integer(m, "max_depth_reached"), List.of(), 0,
                 nestedArtifactId(m), str(m, "error"));
     }
@@ -84,8 +89,21 @@ public final class WebgrphNamespace {
 
     /**
      * Start a crawl, wait for it to finish (crawls run asynchronously), and
-     * return every discovered page, read by cursor from
+     * return every fetched page, read by cursor from
      * {@code webgrph/crawl/{id}/pages}.
+     *
+     * <p>The wait also ends when the crawl is held ({@code status}
+     * {@code held_quota}): the result then has {@link CrawlResult#held()}
+     * true, {@code success} false, no pages, {@code error} null and the
+     * API's text in {@code message}. A held crawl is paused, not failed: the
+     * organisation's quota ran out. It resumes by itself on the same id when
+     * quota returns (an upgrade, a top-up or a new billing period), so call
+     * {@link #waitForCrawl(String)} with its id again later. After 30 days
+     * held it ends {@code failed} with error code {@code held_quota_expired}.
+     *
+     * <p>A crawl that stopped early has {@link CrawlResult#isPartial()} true
+     * and a {@code partialReason}; when {@code resumable} is true,
+     * {@link #continueCrawl} goes on with the pages it did not fetch.
      *
      * @throws JobTimeoutException still running after {@code pollTimeout} (code
      *         {@code crawl_timeout}; {@link JobTimeoutException#getJobId()} is the crawl id)
@@ -96,7 +114,18 @@ public final class WebgrphNamespace {
         return waitForCrawl(started.crawlId(), url, pollInterval, pollTimeout, false);
     }
 
-    /** Wait for a started crawl (by id) and return its pages; resumes after a {@link JobTimeoutException}. */
+    /** {@link #waitForCrawl(String, Duration, Duration)} with the default interval (3 s) and limit (60 min). */
+    public CrawlResult waitForCrawl(String crawlId) {
+        return waitForCrawl(crawlId, null, DEFAULT_POLL_INTERVAL, DEFAULT_POLL_TIMEOUT, false);
+    }
+
+    /**
+     * Wait for a started crawl (by id) and return its pages. Use it after a
+     * {@link JobTimeoutException}, after a held crawl (see
+     * {@link #crawl(String, CrawlOptions, Duration, Duration)}) and after
+     * {@link #continueCrawl}. The result's {@code url} is null: the crawl's
+     * status does not hold it.
+     */
     public CrawlResult waitForCrawl(String crawlId, Duration pollInterval, Duration pollTimeout) {
         return waitForCrawl(crawlId, null, pollInterval, pollTimeout, false);
     }
@@ -117,7 +146,8 @@ public final class WebgrphNamespace {
         while (true) {
             status = getCrawlStatus(crawlId);
             String state = str(status, "status");
-            if ("completed".equals(state) || "failed".equals(state) || "cancelled".equals(state)) break;
+            if ("completed".equals(state) || "failed".equals(state) || "cancelled".equals(state)
+                    || HELD_QUOTA.equals(state)) break;
             if (System.nanoTime() > deadline) {
                 throw new JobTimeoutException("crawl " + crawlId + " still " + state
                         + " after " + pollTimeout, crawlId, "crawl_timeout");
@@ -141,12 +171,37 @@ public final class WebgrphNamespace {
                 cursor = str(page, "next_cursor");
             } while (cursor != null && !cursor.isEmpty());
         }
-        return new CrawlResult("completed".equals(state), crawlId, url != null ? url : str(status, "url"), state,
+        boolean held = HELD_QUOTA.equals(state);
+        // CrawlStatusResponse has no url; a held crawl's message is not an error
+        return new CrawlResult("completed".equals(state), crawlId, url, state,
                 integer(status, "total_pages"), integer(status, "max_depth_reached"),
-                Collections.unmodifiableList(pages), total, str(status, "artifact_id"), str(status, "error"));
+                Collections.unmodifiableList(pages), total, str(status, "artifact_id"),
+                held ? null : str(status, "error"),
+                optBool(status, "is_partial"), str(status, "partial_reason"), optBool(status, "resumable"),
+                optInt(status, "pages_discovered"), optInt(status, "pages_fetched"),
+                optInt(status, "pages_unfetched"), str(status, "error_code"), str(status, "message"), held);
     }
 
-    /** {@link #crawl}, returning only the pages. */
+    /**
+     * Go on with a crawl that ended before fetching every page it found
+     * ({@code POST webgrph/crawl/{crawl_id}/continue}, no body; HTTP 202).
+     * Only for an ended crawl whose {@link CrawlResult#resumable()} is true;
+     * the crawl keeps its id, so wait for it again with
+     * {@link #waitForCrawl(String)}. The quota checks of a new crawl apply.
+     *
+     * @throws dev.kloakd.sdk.errors.ApiException 409: the crawl cannot be continued (it is not
+     *         resumable, has not ended, or its id is unknown) or is already continuing
+     */
+    public CrawlContinueResult continueCrawl(String crawlId) {
+        var m = t.post("webgrph/crawl/" + seg(crawlId) + "/continue", null);
+        return new CrawlContinueResult(bool(m, "success"), str(m, "crawl_id"), str(m, "status"));
+    }
+
+    /**
+     * {@link #crawl}, returning only the pages. The list is empty when the
+     * crawl did not complete, including when it is held for quota; use
+     * {@link #crawl} to see which.
+     */
     public List<PageNode> crawlAll(String url, int maxDepth, int maxPages) {
         return crawl(url, maxDepth, maxPages, false, null).pages();
     }
@@ -253,7 +308,11 @@ public final class WebgrphNamespace {
      * {@code status} ({@code queued}, {@code crawling}, {@code extracting},
      * {@code completed}, {@code failed} or {@code cancelled}), {@code progress}
      * ({@code pages_crawled, pages_total, pages_extracted, pages_failed, items}),
-     * {@code error}, {@code links}, {@code pages_by_method} and {@code shapes}.
+     * {@code error}, {@code links}, {@code pages_by_method}, {@code shapes} and
+     * {@code crawl}: the job's crawl ({@code status, is_partial, partial_reason,
+     * pages_discovered, pages_fetched, pages_unfetched, cancelled, root_unfetched,
+     * error, error_code}), or null before there is one. The job itself is never
+     * {@code held_quota}; its crawl can be ({@link #isCrawlExtractHeld}).
      */
     public Map<String, Object> getCrawlExtract(String jobId) {
         return t.get("webgrph/crawl-extract/" + seg(jobId), null);
@@ -265,8 +324,26 @@ public final class WebgrphNamespace {
     }
 
     /**
+     * Whether a crawl-extract status ({@link #getCrawlExtract}) says the
+     * job's crawl is held for quota ({@code crawl.status} is {@code held_quota}).
+     */
+    public static boolean isCrawlExtractHeld(Map<String, Object> status) {
+        return status != null && HELD_QUOTA.equals(str(mapField(status, "crawl"), "status"));
+    }
+
+    /**
      * Poll a crawl-extract job until it ends and return its last state,
-     * whether {@code completed}, {@code failed} or {@code cancelled}.
+     * whether {@code completed}, {@code failed} or {@code cancelled}. The
+     * returned map is the API's status with one key added by the SDK,
+     * {@code held} (a Boolean).
+     *
+     * <p>The wait also ends, with {@code held} true, when the job's crawl is
+     * held ({@code crawl.status} is {@code held_quota}): the organisation's
+     * quota ran out, and the job waits for its crawl. Nothing has failed.
+     * The crawl resumes by itself when quota returns (an upgrade, a top-up
+     * or a new billing period) and the job goes on under the same id, so
+     * call this again later. A crawl held for 30 days ends failed
+     * ({@code held_quota_expired}).
      *
      * @throws JobTimeoutException still running after {@code pollTimeout};
      *         {@link JobTimeoutException#getJobId()} is the job id
@@ -276,7 +353,13 @@ public final class WebgrphNamespace {
         while (true) {
             var status = getCrawlExtract(jobId);
             String state = str(status, "status");
-            if ("completed".equals(state) || "failed".equals(state) || "cancelled".equals(state)) return status;
+            boolean ended = "completed".equals(state) || "failed".equals(state) || "cancelled".equals(state);
+            boolean held = !ended && isCrawlExtractHeld(status);
+            if (ended || held) {
+                var result = new LinkedHashMap<String, Object>(status);
+                result.put("held", held);
+                return result;
+            }
             if (System.nanoTime() > deadline) {
                 throw new JobTimeoutException("crawl-extract job " + jobId + " still " + state
                         + " after " + pollTimeout, jobId);
@@ -297,7 +380,8 @@ public final class WebgrphNamespace {
     /**
      * {@link #startCrawlExtract(String, CrawlOptions, Map)}, then
      * {@link #waitForCrawlExtract(String, Duration, Duration)}. A cancelled
-     * job is returned, not thrown.
+     * job is returned, not thrown, and so is one whose crawl is held for
+     * quota ({@code held} true; wait for its {@code job_id} again later).
      *
      * @throws JobFailedException  the job failed (its {@code error} is the message)
      * @throws JobTimeoutException still running after {@code pollTimeout}
@@ -401,8 +485,10 @@ public final class WebgrphNamespace {
      * A job's rows as a file, streamed
      * ({@code GET webgrph/crawl-extract/{job_id}/export}). Close the export
      * when done. For a job that has not completed the file holds the rows
-     * stored so far ({@link ExportDownload#jobStatus()}). The CSV starts with
-     * a UTF-8 byte order mark.
+     * stored so far ({@link ExportDownload#jobStatus()}), and
+     * {@link ExportDownload#crawl()} says whether the crawl behind the rows
+     * is partial, held or cancelled (the {@code X-Crawl-*} headers). The CSV
+     * starts with a UTF-8 byte order mark.
      *
      * @param format {@code json}, {@code ndjson} or {@code csv}
      * @param shape    only rows of this shape, or null

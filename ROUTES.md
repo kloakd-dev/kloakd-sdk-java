@@ -1,10 +1,62 @@
 # Routes called by the Java SDK
 
+## Unreleased: checked against kobe-scraper 6bd19e9b
+
+`src/test/resources/routes.tsv` is now the route list of kobe-scraper main
+6bd19e9b (292 rows), replaced whole. `LiveRoutesTest` finds 118 calls in the
+SDK and each is in that list.
+
+New calls:
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST webgrph/crawl/{crawl_id}/continue` | `webgrph().continueCrawl` | no body; 202 `{success, crawl_id, status: "queued"}`; 409 when the crawl cannot be continued, an unknown ID included (`modules/webgrph/router.py` `continue_crawl`) |
+| `POST fetchyr/login-sessions` | `fetchyr().startLoginSession` | body `target_url` and, when set, `method`, `cookies`, `user_agent`, `country`; 202 (interactive) or 201 (cookies), read as `LoginSession` (`modules/fetchyr/router.py` `LoginSessionRequest`, `LoginSessionResponse`) |
+| `GET fetchyr/sessions/{artifact_id}` | `fetchyr().getSession` | read as `SessionStatus` |
+| `POST fetchyr/sessions/{artifact_id}/resume` | `fetchyr().resumeSession` | no body; `SessionStatus`; 409 when not paused or signed out |
+
+Changed reads of calls the SDK already made:
+
+| Call | Java method | Change |
+|---|---|---|
+| `POST webgrph/crawl` | `webgrph().startCrawl` | `status` is no longer read: `CrawlResponse` has none. `CrawlResult.status()` is null |
+| `GET webgrph/crawl/{crawl_id}` | `webgrph().crawl`, `waitForCrawl`, `crawlAll`, `client.crawl` | `url` is no longer read (`CrawlStatusResponse` has none); `message`, `is_partial`, `partial_reason`, `resumable`, `pages_discovered`, `pages_fetched`, `pages_unfetched`, `error_code` are read; the wait stops on `held_quota`. `waitForCrawl(crawlId)` is public with the default interval and timeout |
+| `GET webgrph/crawl/{crawl_id}/pages` | `getCrawlPages` | `PageNode.fetchStatus()`, `fetchError()` read `metadata.fetch_status`, `metadata.fetch_error` |
+| `GET webgrph/crawl-extract/{job_id}` | `waitForCrawlExtract`, `crawlExtract` | the wait stops when `crawl.status` is `held_quota`; the returned map has an SDK-added `held` key |
+| `GET webgrph/crawl-extract/{job_id}/export` | `exportCrawlExtract`, `downloadCrawlExtract` | `X-Crawl-Status`, `-Partial`, `-Partial-Reason`, `-Pages-Discovered`, `-Pages-Fetched`, `-Pages-Unfetched`, `-Cancelled`, `-Root-Unfetched` read as `ExportCrawl` (`modules/webgrph/crawl_extract_router.py`) |
+| `GET batch-jobs/{batch_job_id}/export` | `client.exportBatchJob`, `downloadBatchJob` | no change in the call; it sends no `X-Job-Status` or `X-Crawl-*` header, so `jobStatus()` and `crawl()` are null (`kernel/batch_export_router.py`) |
+| `POST kolektr/extract`, `extract/html` | `kolektr().extract`, `extractHtml` | `level`, `level_reason`, `login_options` read (`modules/kolektr/router.py` `ExtractResponse`) |
+| `POST nexus/reason` | `nexus().reason(queryType, parameters, perceptionId, timeoutSecs)` | `timeout_secs` sent when set (`modules/nexus/router.py` `ReasonRequest`) |
+
+Routes gone from the list since the last check, none of them called by the
+SDK: the five `webgrph/analytics/*` dashboard routes
+(`modules/webgrph/analytics_router.py` no longer exists), `jobs/{job_id}/progress*`,
+`progress/phases*` and `progress/summary`, `scraping/clarify`,
+`users/authenticate`, and the `workspaces/{workspace_id}` content routes.
+
+Still not covered by the SDK:
+
+- Batch jobs: only the export is called. The SDK does not start a batch job,
+  read its status, or pause, resume or cancel one.
+- The unified scrape route is not called.
+- Extract-all jobs (`kolektr().getJobStatus` and the other job reads) have no
+  waiter: a `held_quota` status is returned as the API sends it, with no
+  `held` flag.
+- `webgrph().crawlStream` and `crawlEvents` pass the API's events on as they
+  come; the SDK adds nothing for a held crawl there.
+- The interactive login's steps after `startLoginSession` are the existing
+  auth-chain calls; there is no one-call wait for the login to finish.
+- `CrawlOptions.builder().build()` still fills depth 3 and 100 pages and
+  `client.crawl` sends them. `buildAsSet()` and the `webgrph()` calls send
+  `max_depth` and `max_pages` only when set.
+- Activity, webhooks, billing, invitations, the playground and the ops
+  routes in the list are not called.
+
 ## 0.6.0 → unreleased
 
-Checked against kobe-scraper integration/2026-11-12 (e5e358aa). The route
-list in `src/test/resources/routes.tsv` was edited to match (one row
-removed, seven added), not regenerated. `LiveRoutesTest` now also scans
+Checked at the time against kobe-scraper e5e358aa; that code is now on main.
+The route list was then edited by hand (one row removed, seven added); it
+has since been replaced (see above). `LiveRoutesTest` now also scans
 `download(...)` calls.
 
 | Call | Java method | After 0.6.0 |
@@ -75,7 +127,7 @@ Checked against kobe-scraper's routers (`src/kobe_scraper/modules/*/router.py`, 
 | `POST fetchyr/mfa/detect` | follows a 202 hand-off |
 | `POST nexus/analyze` | follows a 202 hand-off |
 | `POST nexus/synthesize` | follows a 202 hand-off |
-| `POST nexus/execute` | follows a 202 hand-off; reads `execution_result_id` |
+| `POST nexus/execute` | follows a 202 hand-off; reads `execution_result_id` (the route and `nexus().execute` were removed after 0.6.0) |
 | `POST evadr/fetch` | follows its 202 via the same follower (`poll_url` = `evadr/jobs/{id}`) |
 | `GET handoff/{job_id}` | new: the poll route of a hand-off (`poll_url`); not called directly |
 | `POST kolektr/jobs` | removed (route removed) |
@@ -85,7 +137,7 @@ Checked against kobe-scraper's routers (`src/kobe_scraper/modules/*/router.py`, 
 | `GET kolektr/pipeline/{id}/stream`, `…/events` | removed (routes removed) |
 | `GET webgrph/analytics/job-trends`, `…/error-summary` | removed (routes removed) |
 | `GET evadr/profiles` | removed (route removed); `GET evadr/vendors` stays |
-| `GET webgrph/analytics/dashboard/summary`, `…/content/discovery-patterns`, `…/scraping/efficiency-metrics`, `…/site-maps/trends`, `…/users/behavior-insights` | removed from the SDK: dashboard-only (`modules/webgrph/analytics_router.py`; `scripts/generate_public_openapi.py` EXCLUDED); routes kept in routes.tsv |
+| `GET webgrph/analytics/dashboard/summary`, `…/content/discovery-patterns`, `…/scraping/efficiency-metrics`, `…/site-maps/trends`, `…/users/behavior-insights` | removed from the SDK in 0.4.0 as dashboard-only. The API has since removed the routes too: kobe-scraper 6bd19e9b has no `modules/webgrph/analytics_router.py` and routes.tsv no longer lists them |
 
 The fixture also drops the standalone `recommendations/*` routes, which `api/app.py` no longer mounts.
 
@@ -159,8 +211,8 @@ Checked against the backend's route list at kobe-scraper 4fb33ea4 (module router
 | `POST nexus/analyze` | wrong fields | wrong fields: html required; response fields |
 | `POST nexus/synthesize` | wrong fields | wrong fields: url, html, goal (not perception_id) |
 | `POST nexus/verify` | matches; behaviour fixed | response fields: verified, safety_score |
-| `POST nexus/execute` | matches; behaviour fixed | response fields; options |
-| `POST nexus/knowledge` | matches; behaviour fixed | response fields: patterns, total_patterns |
+| `POST nexus/execute` | matches; behaviour fixed | response fields; options (route and method removed after 0.6.0) |
+| `POST nexus/knowledge` | matches; behaviour fixed | response fields: patterns, total_patterns (method removed after 0.6.0: the route's body changed) |
 | `POST nexus/reason` | matches a live route | — |
 | `POST nexus/recommendations/analyze` | matches a live route | — |
 | `GET nexus/recommendations/applications` | matches a live route | — |

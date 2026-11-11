@@ -7,9 +7,45 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-For the API on kobe-scraper integration/2026-11-12 (e5e358aa). **Breaking**:
-two methods and two records are removed, so the next release is 0.7.0.
-`ROUTES.md` lists the routes.
+Checked against kobe-scraper main 6bd19e9b. **Breaking**: two methods and
+two records are removed, and two values the API never sent are no longer
+filled in (see Fixed), so the next release is 0.7.0. `ROUTES.md` lists the
+routes.
+
+### Fixed
+- `webgrph().startCrawl(...)`: `CrawlResult.status()` is now null. `POST
+  webgrph/crawl` answers with no status; the SDK read a field that is not
+  there.
+- `webgrph().waitForCrawl(...)`: `CrawlResult.url()` is no longer read from
+  the status answer, which has no URL. It is the URL passed to `crawl(url,
+  ...)`, and null on a result waited for by ID.
+- The crawl waits (`webgrph().crawl`, `waitForCrawl`, `crawlAll`,
+  `client.crawl`) and the crawl-extract waits (`waitForCrawlExtract`,
+  `crawlExtract`) stop when the API holds the work for quota (`held_quota`)
+  and return it. Before, they polled a held crawl until the timeout and
+  threw `JobTimeoutException`.
+- `ExportDownload.jobStatus()` is documented as it is: set for a
+  crawl-extract export, null for a batch export (which sends no
+  `X-Job-Status`).
+
+### Changed
+- `CrawlResult` has new components `isPartial`, `partialReason`, `resumable`,
+  `pagesDiscovered`, `pagesFetched`, `pagesUnfetched`, `errorCode`, `message`
+  and `held`. For a held crawl `held()` is true, `status()` is `held_quota`,
+  `success()` is false, `error()` is null, `message()` is the API's text and
+  `pages()` is empty. The 0.6.0 ten-argument constructor is kept.
+- `SiteCrawlResult` has new components `crawlId`, `status`, `message` and
+  `held`; `client.crawl` returns a held crawl with no pages fetched. The
+  0.6.0 eight-argument constructor is kept.
+- `waitForCrawlExtract` and `crawlExtract` return a copy of the status map
+  with a `held` key (true or false) added by the SDK.
+- `ExtractionResult` has new components `level`, `levelReason` and
+  `loginOptions` (null when the API sends none). The 0.6.0 eleven-argument
+  constructor is kept.
+- `SavedExport` has a new component `crawl`. The five-argument constructor
+  is kept.
+- Code that matches these records with record patterns, or calls their
+  canonical constructors, must be updated.
 
 ### Removed
 - `nexus().execute(...)` (both overloads) and `NexusExecuteResult`: the API
@@ -19,6 +55,25 @@ two methods and two records are removed, so the next release is 0.7.0.
   refused) and is not part of the public API reference.
 
 ### Added
+- `webgrph().waitForCrawl(crawlId)`: wait for a crawl by its ID with the
+  default interval (3 s) and timeout (60 min).
+- `webgrph().continueCrawl(crawlId)` and `CrawlContinueResult`: continue a
+  crawl that stopped at its time budget (`POST
+  webgrph/crawl/{crawl_id}/continue`). 409 (`ApiException`) when it cannot
+  be continued.
+- `WebgrphNamespace.HELD_QUOTA` and
+  `WebgrphNamespace.isCrawlExtractHeld(status)`.
+- `ExportDownload.crawl()` and `SavedExport.crawl()` (`ExportCrawl`): the
+  crawl-extract export's `X-Crawl-*` headers (status, partial, partial
+  reason, pages discovered, fetched and unfetched, cancelled, root
+  unfetched). Null when the API sent none, as for a batch export.
+- Login sessions (`fetchyr()`): `startLoginSession(targetUrl)`,
+  `startLoginSession(targetUrl, LoginSessionOptions)`, `getSession(artifactId)`
+  and `resumeSession(artifactId)`, with `LoginSession`, `LoginSessionOptions`
+  and `SessionStatus`.
+- `nexus().reason(queryType, parameters, perceptionId, timeoutSecs)`: sends
+  `timeout_secs` when set.
+- `PageNode.fetchStatus()` and `fetchError()` (from the node's metadata).
 - Crawl, extract and download in one job (`webgrph()`):
   `startCrawlExtract`, `crawlExtract`, `getCrawlExtract`,
   `waitForCrawlExtract`, `getCrawlExtractResults`, `crawlExtractAllResults`,
