@@ -57,33 +57,48 @@ class NexusNamespaceTest {
     }
 
     @Test
-    void execute_withoutExecutionResultIdIsNull() {
-        routes.json("POST nexus/execute", 200, Map.of("strategy_id", "st-1", "success", false,
-                "error_message", "no records"));
+    void verify_readsTheWholeResponse() {
+        routes.json("POST nexus/verify", 200, Map.of("strategy_id", "st-1", "verified", false,
+                "safety_score", 0.4, "violations", List.of("unbounded loop"), "status", "unsafe",
+                "risk_score", 0.6, "verification_result_id", "vr-1", "duration_ms", 31,
+                "safety_checks", List.of(Map.of("property", "termination", "passed", false,
+                        "details", "loop has no bound"))));
 
-        var exec = client.nexus().execute("st-1", "https://example.com", Map.of("limit", 5));
+        var result = client.nexus().verify("st-1");
 
-        assertNull(exec.executionResultId());
-        assertEquals("no records", exec.error());
-        assertEquals(Map.of("limit", 5), routes.bodies.get("POST nexus/execute").get("options"));
+        assertFalse(result.verified());
+        assertEquals("unsafe", result.status());
+        assertEquals(0.4, result.safetyScore());
+        assertEquals(0.6, result.riskScore());
+        assertEquals(List.of("unbounded loop"), result.violations());
+        assertEquals("vr-1", result.verificationResultId());
+        assertEquals(31, result.durationMs());
+        assertEquals("termination", result.safetyChecks().get(0).get("property"));
+        assertEquals(false, result.safetyChecks().get(0).get("passed"));
+        assertEquals(Map.of("strategy_id", "st-1"), routes.bodies.get("POST nexus/verify"));
     }
 
     @Test
-    void verifyExecuteKnowledge_readTheApiFields() {
+    void verify_aResponseWithOnlyThe060FieldsStillReads() {
         routes.json("POST nexus/verify", 200, Map.of("strategy_id", "st-1", "verified", true,
                 "safety_score", 0.95, "violations", List.of()));
-        routes.json("POST nexus/execute", 200, Map.of("url", "https://example.com", "strategy_id", "st-1",
-                "success", true, "records", List.of(Map.of("a", 1)), "duration_ms", 12,
-                "execution_result_id", "ex-1"));
-        routes.json("POST nexus/knowledge", 200, Map.of("execution_result_id", "ex-1",
-                "learned_concepts", List.of(), "patterns", List.of(Map.of()), "total_patterns", 1));
 
-        assertTrue(client.nexus().verify("st-1").verified());
-        var exec = client.nexus().execute("st-1", "https://example.com");
-        assertEquals(1, exec.records().size());
-        assertEquals(12, exec.durationMs());
-        assertEquals("ex-1", exec.executionResultId());
-        assertEquals(1, client.nexus().knowledge(exec.executionResultId()).totalPatterns());
-        assertEquals("ex-1", routes.bodies.get("POST nexus/knowledge").get("execution_result_id"));
+        var result = client.nexus().verify("st-1");
+
+        assertTrue(result.verified());
+        assertNull(result.status());
+        assertEquals(List.of(), result.safetyChecks());
+        assertEquals(new dev.kloakd.sdk.models.NexusVerifyResult("st-1", true, 0.95, List.of()), result);
+    }
+
+    @Test
+    void executeAndKnowledgeAreRemoved() {
+        // POST nexus/execute left the API; nexus/knowledge is not in the public reference.
+        var methods = java.util.Arrays.stream(dev.kloakd.sdk.modules.NexusNamespace.class.getDeclaredMethods())
+                .map(java.lang.reflect.Method::getName).toList();
+        assertFalse(methods.contains("execute"));
+        assertFalse(methods.contains("knowledge"));
+        assertThrows(ClassNotFoundException.class, () -> Class.forName("dev.kloakd.sdk.models.NexusExecuteResult"));
+        assertThrows(ClassNotFoundException.class, () -> Class.forName("dev.kloakd.sdk.models.NexusKnowledgeResult"));
     }
 }

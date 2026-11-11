@@ -1,0 +1,113 @@
+package dev.kloakd.sdk.models;
+
+import dev.kloakd.sdk.errors.KloakdException;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * An export's body as a stream ({@code webgrph().exportCrawlExtract},
+ * {@code client.exportBatchJob}), with what its response headers say. The
+ * body is read as it arrives, not held in memory. Close it when done:
+ *
+ * <pre>{@code
+ * try (ExportDownload export = client.webgrph().exportCrawlExtract(jobId, "csv")) {
+ *     export.body().transferTo(out);
+ * }
+ * }</pre>
+ */
+public final class ExportDownload implements AutoCloseable {
+
+    /** The formats the export routes accept. */
+    public static final List<String> FORMATS = List.of("json", "ndjson", "csv");
+
+    private static final Pattern FILENAME = Pattern.compile("filename=\"?([^\";]+)\"?");
+
+    private final InputStream body;
+    private final String contentType;
+    private final String filename;
+    private final String jobStatus;
+
+    public ExportDownload(InputStream body, String contentType, String filename, String jobStatus) {
+        this.body = body;
+        this.contentType = contentType;
+        this.filename = filename;
+        this.jobStatus = jobStatus;
+    }
+
+    /** The export a streamed response holds. */
+    public static ExportDownload of(HttpResponse<InputStream> response) {
+        var headers = response.headers();
+        Matcher m = FILENAME.matcher(headers.firstValue("Content-Disposition").orElse(""));
+        return new ExportDownload(response.body(), headers.firstValue("Content-Type").orElse(null),
+                m.find() ? m.group(1) : null, headers.firstValue("X-Job-Status").orElse(null));
+    }
+
+    /**
+     * {@code format} if the API accepts it.
+     *
+     * @throws IllegalArgumentException it is not one of {@link #FORMATS} (the API would answer 400)
+     */
+    public static String checkFormat(String format) {
+        if (format == null || !FORMATS.contains(format)) {
+            throw new IllegalArgumentException("format must be one of " + String.join(", ", FORMATS)
+                    + ", was " + format);
+        }
+        return format;
+    }
+
+    /** The body, unread. */
+    public InputStream body() { return body; }
+
+    /** The {@code Content-Type} header ({@code application/json}, {@code application/x-ndjson} or {@code text/csv}). */
+    public String contentType() { return contentType; }
+
+    /** The file name the API suggests ({@code Content-Disposition}), or null. */
+    public String filename() { return filename; }
+
+    /**
+     * The job's status when the export began ({@code X-Job-Status}; the
+     * crawl-extract export only, else null). Not {@code completed} means the
+     * file holds the rows stored so far.
+     */
+    public String jobStatus() { return jobStatus; }
+
+    /** The whole body in memory (for a large job prefer {@link #body()} or {@link #saveTo}); closes the export. */
+    public byte[] readAllBytes() {
+        try (this) {
+            return body.readAllBytes();
+        } catch (IOException e) {
+            throw new KloakdException(0, "IO error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Write the body to {@code path} as it arrives (replacing a file already
+     * there) and close the export. A download that breaks part way throws
+     * and leaves the part written.
+     */
+    public SavedExport saveTo(Path path) {
+        try (this; OutputStream out = Files.newOutputStream(path)) {
+            long size = body.transferTo(out);
+            return new SavedExport(path, size, contentType, filename, jobStatus);
+        } catch (IOException e) {
+            throw new KloakdException(0, "IO error: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void close() {
+        try {
+            body.close();
+        } catch (IOException ignored) {
+            // the connection is gone either way
+        }
+    }
+}

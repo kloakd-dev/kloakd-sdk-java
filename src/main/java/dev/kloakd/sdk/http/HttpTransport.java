@@ -277,6 +277,48 @@ public class HttpTransport {
         request("DELETE", path, null, null);
     }
 
+    // ── Streamed downloads ────────────────────────────────────────────────────
+
+    /**
+     * GET a route that streams a file (an export) and return the response
+     * with its body unread. An error status is thrown as {@link #request}
+     * does, with a GET's retries; once the API has answered 2xx nothing is
+     * retried. The request timeout covers the wait for the response's
+     * headers, not the reading of its body.
+     */
+    public HttpResponse<InputStream> download(String path, Map<String, String> params) {
+        String url = buildUrl(path, params);
+        for (int attempt = 0; ; attempt++) {
+            HttpResponse<InputStream> resp;
+            try {
+                resp = httpClient.send(baseRequest(url).GET().build(), HttpResponse.BodyHandlers.ofInputStream());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new KloakdException(0, "Interrupted: " + e.getMessage());
+            } catch (IOException e) {
+                var ex = new KloakdException(0, "IO error: " + e.getMessage());
+                if (attempt >= maxRetries) throw ex;
+                pause(backoffMs(attempt, null, null));
+                continue;
+            }
+
+            if (resp.statusCode() >= 200 && resp.statusCode() < 300) return resp;
+
+            String raw;
+            try (InputStream in = resp.body()) {
+                raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new KloakdException(0, "IO error: " + e.getMessage());
+            }
+            Map<String, Object> parsed = parseBody(raw);
+            String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+            KloakdException ex = raiseForStatus(resp.statusCode(), parsed, retryAfter, raw);
+            long wait = retryDelayMs("GET", ex, attempt, retryAfter, parsed);
+            if (wait < 0 || attempt >= maxRetries) throw ex;
+            pause(wait);
+        }
+    }
+
     // ── 202 hand-off ──────────────────────────────────────────────────────────
 
     /**

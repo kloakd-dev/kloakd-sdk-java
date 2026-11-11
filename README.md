@@ -84,7 +84,7 @@ The API answers within about 85 s. A request still running then is handed
 off as a job (HTTP 202 with a `poll_url`); the SDK polls it and returns the
 same result as a direct answer. This applies to `evadr().fetch`,
 `kolektr().extract`, `fetchyr().authenticate`, `detectForms`, `fillForm`,
-`detectMfa` and `nexus().analyze`, `synthesize`, `execute`. Polls start
+`detectMfa` and `nexus().analyze`, `synthesize`. Polls start
 after `pollInterval` and wait 1.5 times longer each time (at most 15 s), up
 to `pollTimeout`; a failed or expired job throws `JobFailedException`, one
 still running `JobTimeoutException`. Set the wait per client, or per call
@@ -122,13 +122,6 @@ A page behind a login comes back with `authRequired()` true and a
 `discoveryId()` (fetch and extract results); follow it with
 `client.fetchyr().getAuthChainStatus(id)` and answer it with
 `resumeAuthChainCredentials` / `resumeAuthChainMfa`.
-
-### Nexus: execute, then learn
-
-```java
-var exec = client.nexus().execute(strategyId, "https://example.com/products");
-var learned = client.nexus().knowledge(exec.executionResultId());
-```
 
 ### Extraction schemas
 
@@ -261,6 +254,59 @@ page that fails becomes a failed page, but billing and authentication
 errors (`PaymentRequiredException`, `QuotaExceededException`,
 `BillingUnavailableException`, `NotEntitledException`,
 `AuthenticationException`, `RateLimitException`) are thrown.
+
+### Crawl, extract and download
+
+One job crawls a site, extracts every page and keeps the rows for download
+(unreleased; after 0.6.0). The plan must include Kolektr, and a test key is
+refused (403).
+
+```java
+Map<String, Object> job = client.webgrph().startCrawlExtract("https://example.com",
+        CrawlOptions.builder().maxDepth(2).maxPages(200).buildAsSet(),
+        Map.of("schema", Map.of("item_selector", "li.product",
+                "fields", List.of(Map.of("name", "title", "selector", "h3")))));
+String jobId = (String) job.get("job_id");
+Map<String, Object> status = client.webgrph().waitForCrawlExtract(jobId);   // polls to the end
+// status.get("status"), status.get("progress"), status.get("shapes")
+
+// or start and wait in one call (throws JobFailedException when the job fails)
+status = client.webgrph().crawlExtract("https://example.com", null, null);
+
+// Rows, a page at a time (limit 1-1000, 0 for the default) or all of them
+var page = client.webgrph().getCrawlExtractResults(jobId, null, 500, null, null, "item");
+List<Map<String, Object>> rows = client.webgrph().crawlExtractAllResults(jobId);
+
+// The crawled pages and how each was extracted
+var failed = client.webgrph().getCrawlExtractPages(jobId, 0, 0, "failed");
+
+// Download: json, ndjson or csv, streamed to a file ...
+SavedExport saved = client.webgrph().downloadCrawlExtract(jobId, Path.of("rows.csv"), "csv");
+// ... or as a stream
+try (ExportDownload export = client.webgrph().exportCrawlExtract(jobId, "ndjson")) {
+    export.body().transferTo(out);
+}
+
+client.webgrph().cancelCrawlExtract(jobId);   // 409 (ApiException) once it has ended
+```
+
+The JSON answers are maps holding the API's own fields. `extract` is the
+API's own object: `entity_type`, `fields` (a list of names) or `schema`
+(`item_selector` and `fields` of `{name, selector, attribute, type}`);
+null lets the API choose what to extract. `waitForCrawlExtract` polls every
+3 s for at most 60 min by default and throws `JobTimeoutException` while the
+job still runs; a cancelled job is returned, not thrown. An export of a job
+that has not completed holds the rows stored so far (`jobStatus()`). The CSV
+starts with a UTF-8 byte order mark. A refused download leaves no file.
+
+A batch job's results download the same way:
+
+```java
+client.downloadBatchJob(batchJobId, Path.of("batch.ndjson"), "ndjson");
+try (ExportDownload export = client.exportBatchJob(batchJobId, "csv")) {
+    byte[] data = export.readAllBytes();
+}
+```
 
 ### Lists and paging
 

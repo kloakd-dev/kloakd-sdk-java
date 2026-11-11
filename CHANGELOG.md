@@ -5,6 +5,38 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+For the API on kobe-scraper integration/2026-11-12 (e5e358aa). **Breaking**:
+two methods and two records are removed, so the next release is 0.7.0.
+`ROUTES.md` lists the routes.
+
+### Removed
+- `nexus().execute(...)` (both overloads) and `NexusExecuteResult`: the API
+  removed `POST nexus/execute`; the call could only fail.
+- `nexus().knowledge(...)` and `NexusKnowledgeResult`: the route now takes
+  `{strategy_id, url, outcome}` (the old `{execution_result_id}` body is
+  refused) and is not part of the public API reference.
+
+### Added
+- Crawl, extract and download in one job (`webgrph()`):
+  `startCrawlExtract`, `crawlExtract`, `getCrawlExtract`,
+  `waitForCrawlExtract`, `getCrawlExtractResults`, `crawlExtractAllResults`,
+  `getCrawlExtractPages`, `exportCrawlExtract` (stream),
+  `downloadCrawlExtract` (file), `cancelCrawlExtract`. The JSON answers are
+  maps, as for `getCrawlStatus`. New `ExportDownload` (the body as an
+  `InputStream`, `contentType()`, `filename()`, `jobStatus()`) and
+  `SavedExport`. A `limit` outside 0–1000 or a `format` other than `json`,
+  `ndjson` or `csv` throws `IllegalArgumentException` before the request.
+- `client.exportBatchJob` and `client.downloadBatchJob`: a batch job's
+  results as json, ndjson or csv.
+- `NexusVerifyResult.status()`, `riskScore()`, `safetyChecks()`,
+  `verificationResultId()`, `durationMs()` (new record components; the 0.6.0
+  four-argument constructor is kept).
+- `HttpTransport.download(path, params)`: a GET whose body is handed on
+  unread. An error status is thrown (and retried) as for any GET; the
+  request timeout covers the wait for the headers, not the body.
+
 ## [0.6.0] — 2026-11-03
 
 Support for the API changes deployed on 2 November 2026, checked against
