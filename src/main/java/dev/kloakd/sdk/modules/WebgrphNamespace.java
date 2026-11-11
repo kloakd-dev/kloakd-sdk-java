@@ -405,7 +405,9 @@ public final class WebgrphNamespace {
      * a UTF-8 byte order mark.
      *
      * @param format {@code json}, {@code ndjson} or {@code csv}
-     * @param shape, pageType, kind as for {@link #getCrawlExtractResults(String, String, int, String, String, String)}
+     * @param shape    only rows of this shape, or null
+     * @param pageType only rows from pages of this type, or null
+     * @param kind     {@code item} or {@code page}, or null
      * @throws IllegalArgumentException {@code format} is none of the three
      */
     public ExportDownload exportCrawlExtract(String jobId, String format, String shape, String pageType, String kind) {
