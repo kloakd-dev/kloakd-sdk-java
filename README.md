@@ -84,7 +84,8 @@ The API answers within about 85 s. A request still running then is handed
 off as a job (HTTP 202 with a `poll_url`); the SDK polls it and returns the
 same result as a direct answer. This applies to `evadr().fetch`,
 `kolektr().extract`, `fetchyr().authenticate`, `detectForms`, `fillForm`,
-`detectMfa` and `nexus().analyze`, `synthesize`. Polls start
+`detectMfa`, `nexus().analyze`, `synthesize` and `client.unifiedScrape`.
+Polls start
 after `pollInterval` and wait 1.5 times longer each time (at most 15 s), up
 to `pollTimeout`; a failed or expired job throws `JobFailedException`, one
 still running `JobTimeoutException`. Set the wait per client, or per call
@@ -389,6 +390,75 @@ try (ExportDownload export = client.exportBatchJob(batchJobId, "csv")) {
 The batch export sends no `X-Job-Status` and no `X-Crawl-*` header:
 `jobStatus()` and `crawl()` are null for it.
 
+### Batch jobs
+
+A batch extracts a list of URLs, one item per URL, and holds one work slot
+until it ends. It needs a live key (a test key is refused with 403).
+
+```java
+BatchJob batch = client.createBatchJob(
+        List.of("https://shop.example/p/1", "https://shop.example/p/2"),
+        BatchJobOptions.builder().entityType("products").fields(List.of("name", "price")).build());
+
+client.pauseBatchJob(batch.id());                    // items already running finish; the rest wait
+client.resumeBatchJob(batch.id());                   // the waiting items are queued again, each once
+BatchJob state = client.getBatchJob(batch.id());     // status(), totalItems(), completedItems(), message()
+
+BatchJobResults page = client.getBatchJobResults(batch.id(), 100, 0);
+for (BatchJobItem item : page.results()) {
+    System.out.println(item.jobId() + " " + item.status() + " " + item.extractedData());
+}
+
+client.cancelBatchJob(batch.id());   // items not yet ended are cancelled; finished ones keep their results
+```
+
+- `status()` is `pending`, `running`, `paused`, `held_quota`, `completed`,
+  `failed` or `cancelled`. Only a running batch can be paused, only a
+  paused one resumed, and a batch that has completed or failed cannot be
+  cancelled: the API answers 409 and the SDK throws an `ApiException` with
+  `getCode()` `invalid_batch_transition` (the message names the batch's
+  status).
+- Repeating a call is not an error: pausing a paused batch, resuming a
+  running one and cancelling a cancelled one answer the batch as it is.
+- `resumeBatchJob` can throw a 503 `ApiException` with `getCode()`
+  `dispatch_failed`: the items could not be queued and the batch is paused
+  again, so call it again. `createBatchJob` throws the same when the batch
+  could not be queued; nothing was started. Neither is retried by the SDK.
+- Creating or resuming over the plan's running batches throws
+  `ConcurrencyLimitException`; more URLs than the plan's limit is a 413
+  `ApiException` with `getCode()` `batch_too_large`.
+- `listBatchJobs()` and `listBatchJobs(page, pageSize)` list the
+  organisation's batches, newest first (`BatchJobsPage.total()`,
+  `batchJobs()`). `exportBatchJob` and `downloadBatchJob` (above) give the
+  rows as a file.
+
+### Unified scrape
+
+`client.unifiedScrape(url, options)` lets the API choose how to scrape a
+URL: level 1 (direct extraction) or level 2 (the Strategy Engine),
+escalating when the first fails. It needs a live key whose plan has Kolektr
+and Nexus (403 `ForbiddenException` with `getCode()` `test_key_not_allowed`
+or `module_not_entitled` otherwise).
+
+```java
+UnifiedScrapeResult scrape = client.unifiedScrape("https://shop.example/list",
+        UnifiedScrapeOptions.builder()
+                .prompt("product names and prices")
+                .mode("auto")   // or "level1", "level2"
+                .schema(Map.of("name", "product name", "price", "price"))
+                .build());
+if (scrape.authRequired()) {
+    // The URL is behind a login: nothing was scraped. scrape.discoveryId() names the auth-chain discovery.
+} else {
+    UnifiedScrapeStatus job = client.getUnifiedScrape(scrape.jobId());   // status(), level(), progress(), result(), escalationPath()
+}
+```
+
+Options: `prompt`, `mode`, `schema`, `options`, `context`, `constraints`,
+`sessionArtifactId` (a login session), and `pollInterval` / `pollTimeout`
+for a request the API hands off (202), which is followed like every other
+long request.
+
 ### Login sessions
 
 A login session lets later requests run as a logged-in account
@@ -517,7 +587,8 @@ try {
     // 502 — upstream site fetch failed
 } catch (ApiException e) {
     // other 4xx/5xx; the message is the API's (422: "body.url: Field required"),
-    // or the response text when it is not JSON
+    // or the response text when it is not JSON. getCode() is the API's error code,
+    // for example 409 invalid_batch_transition and 503 dispatch_failed on the batch calls
     System.out.println("Status: " + e.getStatusCode() + " code: " + e.getCode());
 } catch (KloakdException e) {
     // base class — network / IO errors

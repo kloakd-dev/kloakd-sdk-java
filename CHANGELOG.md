@@ -7,7 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-Checked against kobe-scraper main 6bd19e9b. **Breaking**: two methods and
+Checked against kobe-scraper main 6bd19e9b; the batch and unified scrape
+methods and the route list are of integration/2026-11-12b (228857dc).
+**Breaking**: two methods and
 two records are removed, and two values the API never sent are no longer
 filled in (see Fixed), so the next release is 0.7.0. `ROUTES.md` lists the
 routes.
@@ -46,6 +48,9 @@ routes.
   is kept.
 - Code that matches these records with record patterns, or calls their
   canonical constructors, must be updated.
+- `src/test/resources/routes.tsv` is the route list of kobe-scraper
+  integration/2026-11-12b (228857dc): 280 routes. The API removed its 12
+  `performance/...` routes; the SDK called none.
 
 ### Removed
 - `nexus().execute(...)` (both overloads) and `NexusExecuteResult`: the API
@@ -73,6 +78,20 @@ routes.
   and `SessionStatus`.
 - `nexus().reason(queryType, parameters, perceptionId, timeoutSecs)`: sends
   `timeout_secs` when set.
+- Batch jobs (`Kloakd`): `createBatchJob(urls)`, `createBatchJob(urls,
+  BatchJobOptions)`, `getBatchJob`, `listBatchJobs()`, `listBatchJobs(page,
+  pageSize)`, `getBatchJobResults(id)`, `getBatchJobResults(id, limit,
+  offset)`, `pauseBatchJob`, `resumeBatchJob`, `cancelBatchJob`. A control
+  the batch's state does not allow is a 409 `ApiException` with `getCode()`
+  `invalid_batch_transition`; repeating a control answers the batch as it
+  is; a resume or a create that could not be queued is a 503 `ApiException`
+  with `getCode()` `dispatch_failed` and is not retried. Records `BatchJob`,
+  `BatchJobsPage`, `BatchJobItem`, `BatchJobResults`, `BatchJobOptions`.
+- Unified scrape (`Kloakd`): `unifiedScrape(url)`, `unifiedScrape(url,
+  UnifiedScrapeOptions)` (`POST scraping/unified`, a 202 hand-off is
+  followed) and `getUnifiedScrape(jobId)`. Records `UnifiedScrapeOptions`,
+  `UnifiedScrapeResult`, `UnifiedScrapeStatus`, `UnifiedScrapeProgress`,
+  `UnifiedEscalation`.
 - `PageNode.fetchStatus()` and `fetchError()` (from the node's metadata).
 - Crawl, extract and download in one job (`webgrph()`):
   `startCrawlExtract`, `crawlExtract`, `getCrawlExtract`,

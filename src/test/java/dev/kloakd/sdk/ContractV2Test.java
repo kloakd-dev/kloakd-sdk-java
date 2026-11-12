@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * After 0.6.0: crawl-extract, its downloads and the batch export. The route
- * list is kobe-scraper main 6bd19e9b's. Every answer here is a mock's.
+ * list is kobe-scraper integration/2026-11-12b's (228857dc). Every answer here is a mock's.
  */
 class ContractV2Test {
 

@@ -125,6 +125,250 @@ public final class Kloakd {
         return exportBatchJob(batchJobId, format).saveTo(path);
     }
 
+    // ── Batch jobs ──────────────────────────────────────────────────────────
+
+    /** {@link #createBatchJob(List, BatchJobOptions)} with the URLs alone. */
+    public BatchJob createBatchJob(List<String> urls) {
+        return createBatchJob(urls, null);
+    }
+
+    /**
+     * Create a batch job: one extraction per URL ({@code POST batch-jobs},
+     * 201; kobe-scraper kernel/jobs_runs_router.py). The batch holds one
+     * work slot until it ends. Never retried.
+     *
+     * @param urls    the URLs, at least one
+     * @param options how to extract them, or null
+     * @throws ForbiddenException        403 {@code test_key_not_allowed}: a test key
+     * @throws ConcurrencyLimitException 409: the plan's running batches are in use
+     * @throws ApiException              413 {@code batch_too_large}: more URLs than the plan allows;
+     *                                   422: no URLs; 503 {@code dispatch_failed}: the batch could
+     *                                   not be queued (nothing was started)
+     */
+    public BatchJob createBatchJob(List<String> urls, BatchJobOptions options) {
+        var body = new HashMap<String, Object>();
+        body.put("urls", urls);
+        if (options != null) {
+            if (options.extractionConfig() != null) body.put("extraction_config", options.extractionConfig());
+            if (options.crawlId() != null) body.put("crawl_id", options.crawlId());
+            if (options.entityType() != null) body.put("entity_type", options.entityType());
+            if (options.fields() != null) body.put("fields", options.fields());
+        }
+        return parseBatchJob(transport.post("batch-jobs", body));
+    }
+
+    /**
+     * A batch job's state ({@code GET batch-jobs/{batch_job_id}}).
+     *
+     * @throws ApiException 404: no such batch of yours
+     */
+    public BatchJob getBatchJob(String batchJobId) {
+        return parseBatchJob(transport.get("batch-jobs/" + HttpTransport.seg(batchJobId), null));
+    }
+
+    /** {@link #listBatchJobs(int, int)} with the API's defaults (page 1, 20 a page). */
+    public BatchJobsPage listBatchJobs() {
+        return listBatchJobs(0, 0);
+    }
+
+    /**
+     * The organisation's batch jobs, newest first ({@code GET batch-jobs}).
+     *
+     * @param page     from 1; 0 for the API's default
+     * @param pageSize 1 to 100; 0 for the API's default (20)
+     */
+    public BatchJobsPage listBatchJobs(int page, int pageSize) {
+        var params = new LinkedHashMap<String, String>();
+        if (page > 0) params.put("page", String.valueOf(page));
+        if (pageSize > 0) params.put("page_size", String.valueOf(pageSize));
+        var m = transport.get("batch-jobs", params.isEmpty() ? null : params);
+        var jobs = new ArrayList<BatchJob>();
+        for (var job : maps(m.get("batch_jobs"))) jobs.add(parseBatchJob(job));
+        return new BatchJobsPage(intOf(m.get("total")), Collections.unmodifiableList(jobs));
+    }
+
+    /** {@link #getBatchJobResults(String, int, int)} with every item. */
+    public BatchJobResults getBatchJobResults(String batchJobId) {
+        return getBatchJobResults(batchJobId, 0, 0);
+    }
+
+    /**
+     * A batch's items with what each extracted
+     * ({@code GET batch-jobs/{batch_job_id}/results}). To download the rows
+     * use {@link #exportBatchJob}.
+     *
+     * @param limit  1 to 1000 items from {@code offset}, and the counts are then of the
+     *               whole batch; 0 for every item
+     * @param offset items to skip; 0 for none
+     */
+    public BatchJobResults getBatchJobResults(String batchJobId, int limit, int offset) {
+        var params = new LinkedHashMap<String, String>();
+        if (limit > 0) params.put("limit", String.valueOf(limit));
+        if (offset > 0) params.put("offset", String.valueOf(offset));
+        var m = transport.get("batch-jobs/" + HttpTransport.seg(batchJobId) + "/results",
+                params.isEmpty() ? null : params);
+        var items = new ArrayList<BatchJobItem>();
+        for (var item : maps(m.get("results"))) {
+            items.add(new BatchJobItem(text(item.get("job_id")), text(item.get("url")), text(item.get("status")),
+                    item.get("extracted_data"), mapOrNull(item.get("api_data"))));
+        }
+        String id = text(m.get("batch_job_id"));
+        return new BatchJobResults(id != null ? id : batchJobId, Collections.unmodifiableList(items),
+                intOf(m.get("total_jobs")), intOf(m.get("completed_jobs")), intOf(m.get("failed_jobs")));
+    }
+
+    /**
+     * Pause a running batch ({@code POST batch-jobs/{batch_job_id}/pause};
+     * kobe-scraper application/jobs/batch_control.py). Items already running
+     * finish; no other item starts until {@link #resumeBatchJob}. Pausing a
+     * paused batch changes nothing.
+     *
+     * @throws ApiException 409 with code {@code invalid_batch_transition}: the batch is in
+     *                      any other state; 404: no such batch of yours
+     */
+    public BatchJob pauseBatchJob(String batchJobId) {
+        return batchControl(batchJobId, "/pause");
+    }
+
+    /**
+     * Resume a paused batch ({@code POST batch-jobs/{batch_job_id}/resume}):
+     * the items held while it was paused are queued again, each once.
+     * Resuming a running batch changes nothing. Gated like creation (quota,
+     * payment, the plan's running batches). Never retried.
+     *
+     * @throws ApiException              409 with code {@code invalid_batch_transition}: the batch
+     *                                   is in any other state; 503 with code {@code dispatch_failed}:
+     *                                   the items could not be queued and the batch is paused
+     *                                   again, so call it again; 404: no such batch of yours
+     * @throws ConcurrencyLimitException 409: the plan's running batches are in use
+     */
+    public BatchJob resumeBatchJob(String batchJobId) {
+        return batchControl(batchJobId, "/resume");
+    }
+
+    /**
+     * Cancel a batch and every item of it that has not ended
+     * ({@code POST batch-jobs/{batch_job_id}/cancel}). Completed and failed
+     * items keep their results. Cancelling a cancelled batch changes nothing.
+     *
+     * @throws ApiException 409 with code {@code invalid_batch_transition}: the batch has
+     *                      completed or failed; 404: no such batch of yours
+     */
+    public BatchJob cancelBatchJob(String batchJobId) {
+        return batchControl(batchJobId, "/cancel");
+    }
+
+    private BatchJob batchControl(String batchJobId, String action) {
+        return parseBatchJob(transport.post("batch-jobs/" + HttpTransport.seg(batchJobId) + action, null));
+    }
+
+    // ── Unified scrape ──────────────────────────────────────────────────────
+
+    /** {@link #unifiedScrape(String, UnifiedScrapeOptions)} with the API's defaults. */
+    public UnifiedScrapeResult unifiedScrape(String url) {
+        return unifiedScrape(url, null);
+    }
+
+    /**
+     * Scrape a URL and let the API choose how ({@code POST scraping/unified};
+     * kobe-scraper api/v1/endpoints/unified_scraping.py): level 1 (direct
+     * extraction) or level 2 (the Strategy Engine), with escalation when the
+     * first fails. Needs a live API key entitled to Kolektr and Nexus. A
+     * request the API hands off as a job (HTTP 202) is followed to its
+     * result, as every other long request is. The answer names the job; read
+     * its state and data with {@link #getUnifiedScrape}. When the URL is
+     * behind a login the answer has {@code authRequired} true and nothing
+     * was scraped.
+     *
+     * @param url     the page
+     * @param options prompt, mode, schema and the rest, or null; only what is set is sent
+     * @throws ForbiddenException  403 {@code test_key_not_allowed} or {@code module_not_entitled}
+     * @throws JobFailedException  a handed-off request failed or expired
+     * @throws JobTimeoutException a handed-off request was still running at the poll timeout
+     */
+    public UnifiedScrapeResult unifiedScrape(String url, UnifiedScrapeOptions options) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        Duration interval = transport.pollInterval();
+        Duration limit = transport.pollTimeout();
+        if (options != null) {
+            if (options.prompt() != null) body.put("prompt", options.prompt());
+            if (options.mode() != null) body.put("mode", options.mode());
+            if (options.schema() != null) body.put("schema", options.schema());
+            if (options.options() != null) body.put("options", options.options());
+            if (options.context() != null) body.put("context", options.context());
+            if (options.constraints() != null) body.put("constraints", options.constraints());
+            if (options.sessionArtifactId() != null) body.put("session_artifact_id", options.sessionArtifactId());
+            if (options.pollInterval() != null) interval = options.pollInterval();
+            if (options.pollTimeout() != null) limit = options.pollTimeout();
+        }
+        var m = transport.postFollowing("scraping/unified", body, interval, limit);
+        return new UnifiedScrapeResult(!Boolean.FALSE.equals(m.get("success")), text(m.get("job_id")),
+                text(m.get("level")), text(m.get("status")), escalations(m.get("escalation_path")),
+                text(m.get("message")), mapOrNull(m.get("metadata")),
+                Boolean.TRUE.equals(m.get("auth_required")), text(m.get("discovery_id")));
+    }
+
+    /**
+     * The state of a unified scrape job and, once it has one, its result
+     * ({@code GET scraping/unified/{job_id}}).
+     *
+     * @throws ApiException 404: no such job of yours
+     */
+    public UnifiedScrapeStatus getUnifiedScrape(String jobId) {
+        var m = transport.get("scraping/unified/" + HttpTransport.seg(jobId), null);
+        var detail = mapOrNull(m.get("progress_detail"));
+        UnifiedScrapeProgress progress = detail == null ? null : new UnifiedScrapeProgress(
+                intOf(detail.get("percentage")), text(detail.get("current_step")),
+                optInt(detail.get("items_found")), optInt(detail.get("items_target")),
+                detail.get("partial_results") instanceof List<?> ? maps(detail.get("partial_results")) : null);
+        String id = text(m.get("id"));
+        return new UnifiedScrapeStatus(id != null ? id : jobId, text(m.get("status")), text(m.get("level")),
+                optInt(m.get("progress")), progress, text(m.get("created_at")), text(m.get("updated_at")),
+                text(m.get("completed_at")), text(m.get("error")), mapOrNull(m.get("result")),
+                escalations(m.get("escalation_path")));
+    }
+
+    private static BatchJob parseBatchJob(Map<String, Object> m) {
+        return new BatchJob(text(m.get("id")), text(m.get("name")), text(m.get("status")),
+                intOf(m.get("total_items")), intOf(m.get("completed_items")), text(m.get("created_at")),
+                text(m.get("message")));
+    }
+
+    private static List<UnifiedEscalation> escalations(Object value) {
+        var out = new ArrayList<UnifiedEscalation>();
+        for (var step : maps(value)) {
+            out.add(new UnifiedEscalation(text(step.get("from")), text(step.get("to")), text(step.get("reason")),
+                    text(step.get("timestamp"))));
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    private static String text(Object value) {
+        return value instanceof String s ? s : null;
+    }
+
+    private static int intOf(Object value) {
+        return value instanceof Number n ? n.intValue() : 0;
+    }
+
+    private static Integer optInt(Object value) {
+        return value instanceof Number n ? n.intValue() : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapOrNull(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> maps(Object value) {
+        if (!(value instanceof List<?> list)) return List.of();
+        var out = new ArrayList<Map<String, Object>>();
+        for (var item : list) if (item instanceof Map<?, ?> map) out.add((Map<String, Object>) map);
+        return Collections.unmodifiableList(out);
+    }
+
     // ── High-level orchestrator ──────────────────────────────────────────────
 
     /**

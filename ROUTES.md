@@ -1,10 +1,37 @@
 # Routes called by the Java SDK
 
+## Unreleased: batch jobs and the unified scrape
+
+Checked against kobe-scraper integration/2026-11-12b (228857dc):
+`kernel/jobs_runs_router.py`, `application/jobs/batch_control.py` and
+`api/v1/endpoints/unified_scraping.py`. `src/test/resources/routes.tsv` is
+generated from that checkout: 280 rows. The 12 `performance/...` routes are
+gone from the API; the SDK called none of them.
+`BatchUnifiedTest.theNewMethodsCallLiveRoutes` checks the new calls (they
+are made on the client's transport, outside the namespace scan of
+`LiveRoutesTest`).
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST batch-jobs` | `client.createBatchJob` | body `{urls, extraction_config?, crawl_id?, entity_type?, fields?}`; 201; 403 `test_key_not_allowed`, 409 `concurrent_limit`, 413 `batch_too_large`, 422 for no URLs, 503 `dispatch_failed` |
+| `GET batch-jobs` | `client.listBatchJobs` | `page`, `page_size` (1–100) |
+| `GET batch-jobs/{batch_job_id}` | `client.getBatchJob` | |
+| `GET batch-jobs/{batch_job_id}/results` | `client.getBatchJobResults` | `limit` (1–1000), `offset`; each item is `{job_id, url, status, extracted_data, api_data}` |
+| `POST batch-jobs/{batch_job_id}/pause` | `client.pauseBatchJob` | only a running batch; a paused one answers 200 unchanged; otherwise 409 `invalid_batch_transition` |
+| `POST batch-jobs/{batch_job_id}/resume` | `client.resumeBatchJob` | only a paused batch; a running one answers 200 unchanged; otherwise 409 `invalid_batch_transition`; 409 `concurrent_limit`; 503 `dispatch_failed` (paused again) |
+| `POST batch-jobs/{batch_job_id}/cancel` | `client.cancelBatchJob` | a cancelled one answers 200 unchanged; 409 `invalid_batch_transition` once completed or failed |
+| `POST scraping/unified` | `client.unifiedScrape` | body `{url, prompt?, mode?, schema?, options?, context?, constraints?, session_artifact_id?}`; a 202 hand-off is followed through `GET handoff/{job_id}`; 403 `test_key_not_allowed`, `module_not_entitled` |
+| `GET scraping/unified/{job_id}` | `client.getUnifiedScrape` | |
+
+Not covered, by choice: `DELETE batch/{batch_job_id}`, `POST batch/url-import`
+and the event stream `GET batch-jobs/{batch_job_id}/stream`. There is no
+batch waiter.
+
 ## Unreleased: checked against kobe-scraper 6bd19e9b
 
-`src/test/resources/routes.tsv` is now the route list of kobe-scraper main
+`src/test/resources/routes.tsv` was then the route list of kobe-scraper main
 6bd19e9b (292 rows), replaced whole. `LiveRoutesTest` finds 118 calls in the
-SDK and each is in that list.
+SDK's namespaces and each is in the list.
 
 New calls:
 
@@ -36,9 +63,9 @@ SDK: the five `webgrph/analytics/*` dashboard routes
 
 Still not covered by the SDK:
 
-- Batch jobs: only the export is called. The SDK does not start a batch job,
-  read its status, or pause, resume or cancel one.
-- The unified scrape route is not called.
+- The batch event stream, `DELETE batch/{batch_job_id}` and `POST
+  batch/url-import`; there is no batch waiter. (The other batch routes and
+  the unified scrape are covered: see the section above.)
 - Extract-all jobs (`kolektr().getJobStatus` and the other job reads) have no
   waiter: a `held_quota` status is returned as the API sends it, with no
   `held` flag.
