@@ -280,6 +280,11 @@ public final class Kloakd {
      * behind a login the answer has {@code authRequired} true and nothing
      * was scraped.
      *
+     * <p>Check {@code status()}: when the scrape fails the API still answers
+     * with {@code success} true and {@code status} {@code "failed"}, without
+     * the error text, and that answer's {@code jobId} names no stored job, so
+     * {@link #getUnifiedScrape} on it throws the API's 404.
+     *
      * @param url     the page
      * @param options prompt, mode, schema and the rest, or null; only what is set is sent
      * @throws ForbiddenException  403 {@code test_key_not_allowed} or {@code module_not_entitled}

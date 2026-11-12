@@ -94,6 +94,9 @@ routes.
   followed) and `getUnifiedScrape(jobId)`. Records `UnifiedScrapeOptions`,
   `UnifiedScrapeResult`, `UnifiedScrapeStatus`, `UnifiedScrapeProgress`,
   `UnifiedEscalation`.
+- `ConcurrencyLimitException.getActiveCrawls()` is also filled from the
+  batch limit's 409 (`createBatchJob`, `resumeBatchJob`), which sends the
+  count as `active_batches`.
 - `PageNode.fetchStatus()` and `fetchError()` (from the node's metadata).
 - Crawl, extract and download in one job (`webgrph()`):
   `startCrawlExtract`, `crawlExtract`, `getCrawlExtract`,

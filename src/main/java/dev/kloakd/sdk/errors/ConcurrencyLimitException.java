@@ -31,7 +31,11 @@ public class ConcurrencyLimitException extends ApiException {
     /** The number of slots the plan has ({@code concurrent_limit}). */
     public int getConcurrentLimit() { return concurrentLimit; }
 
-    /** Crawls and batches running or queued ({@code active_crawls}), or null (test keys do not report it). */
+    /**
+     * Crawls and batches running or queued ({@code active_crawls}), or null (test keys do not report it).
+     * For the batch limit ({@code createBatchJob}, {@code resumeBatchJob}) it is the API's
+     * {@code active_batches}: the batches pending or running.
+     */
     public Integer getActiveCrawls() { return activeCrawls; }
 
     /** Other calls in flight holding a slot ({@code active_requests}), or null (test keys, or an API before 2 November 2026). */

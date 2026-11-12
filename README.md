@@ -449,10 +449,18 @@ UnifiedScrapeResult scrape = client.unifiedScrape("https://shop.example/list",
                 .build());
 if (scrape.authRequired()) {
     // The URL is behind a login: nothing was scraped. scrape.discoveryId() names the auth-chain discovery.
+} else if ("failed".equals(scrape.status())) {
+    // The scrape failed. success() is still true and there is no error text;
+    // jobId() names no stored job (getUnifiedScrape would throw a 404).
 } else {
     UnifiedScrapeStatus job = client.getUnifiedScrape(scrape.jobId());   // status(), level(), progress(), result(), escalationPath()
 }
 ```
+
+Check `status()`: when the scrape fails the API still answers with
+`success` true and `status` `"failed"`, without the error text, and that
+answer's `jobId` names no stored job, so `getUnifiedScrape` on it throws an
+`ApiException` with status 404.
 
 Options: `prompt`, `mode`, `schema`, `options`, `context`, `constraints`,
 `sessionArtifactId` (a login session), and `pollInterval` / `pollTimeout`

@@ -305,6 +305,9 @@ class BatchUnifiedTest {
 
         assertEquals("concurrent_limit", ex.getCode());
         assertEquals(2, ex.getConcurrentLimit());
+        // detail.active_batches (kernel/jobs_runs_router.py _check_batch_concurrency)
+        assertEquals(2, ex.getActiveCrawls());
+        assertEquals("free", ex.getTier());
     }
 
     @ParameterizedTest

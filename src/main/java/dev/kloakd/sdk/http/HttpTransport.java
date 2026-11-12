@@ -598,8 +598,12 @@ public class HttpTransport {
             return new ForbiddenException(msg, code);
         }
         if (status == 409 && "concurrent_limit".equals(code)) {
+            // The batch limit (kernel/jobs_runs_router.py _check_batch_concurrency)
+            // sends its count as active_batches.
+            Integer active = optInt(detail, "active_crawls");
+            if (active == null) active = optInt(detail, "active_batches");
             return new ConcurrencyLimitException(msg, intVal(detail, "concurrent_limit", 0),
-                    optInt(detail, "active_crawls"), optInt(detail, "active_requests"), str(detail, "tier"));
+                    active, optInt(detail, "active_requests"), str(detail, "tier"));
         }
         if (status == 429 && "gb_exhausted".equals(code)) return new QuotaExceededException(msg, upgradeUrl,
                 dbl(detail, "residential_gb_used"), dbl(detail, "residential_gb_limit"),
