@@ -1,6 +1,6 @@
 # Routes called by the Java SDK
 
-## Unreleased: batch jobs and the unified scrape
+## 0.7.0: batch jobs and the unified scrape
 
 Checked against kobe-scraper integration/2026-11-12b (228857dc):
 `kernel/jobs_runs_router.py`, `application/jobs/batch_control.py` and
@@ -27,7 +27,7 @@ Not covered, by choice: `DELETE batch/{batch_job_id}`, `POST batch/url-import`
 and the event stream `GET batch-jobs/{batch_job_id}/stream`. There is no
 batch waiter.
 
-## Unreleased: checked against kobe-scraper 6bd19e9b
+## 0.7.0: checked against kobe-scraper 6bd19e9b
 
 `src/test/resources/routes.tsv` was then the route list of kobe-scraper main
 6bd19e9b (292 rows), replaced whole. `LiveRoutesTest` finds 118 calls in the
@@ -79,14 +79,14 @@ Still not covered by the SDK:
 - Activity, webhooks, billing, invitations, the playground and the ops
   routes in the list are not called.
 
-## 0.6.0 → unreleased
+## 0.6.0 → 0.7.0
 
 Checked at the time against kobe-scraper e5e358aa; that code is now on main.
 The route list was then edited by hand (one row removed, seven added); it
 has since been replaced (see above). `LiveRoutesTest` now also scans
 `download(...)` calls.
 
-| Call | Java method | After 0.6.0 |
+| Call | Java method | 0.7.0 |
 |---|---|---|
 | `POST nexus/execute` | — | removed from the API (`modules/nexus/router.py`) and the SDK (`nexus().execute`) |
 | `POST nexus/knowledge` | — | no longer called (`nexus().knowledge` removed): the body is now `{strategy_id, url, outcome}` and the route is left out of the public API reference (`scripts/generate_public_openapi.py` EXCLUDED). Still in the route list |

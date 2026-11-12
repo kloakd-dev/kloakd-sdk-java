@@ -15,7 +15,7 @@ Maven (`pom.xml`):
 <dependency>
   <groupId>dev.kloakd</groupId>
   <artifactId>kloakd-sdk</artifactId>
-  <version>0.6.0</version>
+  <version>0.7.0</version>
 </dependency>
 ```
 
@@ -23,7 +23,7 @@ Gradle (`build.gradle.kts`):
 
 ```kotlin
 dependencies {
-    implementation("dev.kloakd:kloakd-sdk:0.6.0")
+    implementation("dev.kloakd:kloakd-sdk:0.7.0")
 }
 ```
 
@@ -31,7 +31,7 @@ Gradle (Groovy `build.gradle`):
 
 ```groovy
 dependencies {
-    implementation 'dev.kloakd:kloakd-sdk:0.6.0'
+    implementation 'dev.kloakd:kloakd-sdk:0.7.0'
 }
 ```
 
@@ -309,7 +309,7 @@ errors (`PaymentRequiredException`, `QuotaExceededException`,
 ### Crawl, extract and download
 
 One job crawls a site, extracts every page and keeps the rows for download
-(unreleased; after 0.6.0). The plan must include Kolektr, and a test key is
+(new in 0.7.0). The plan must include Kolektr, and a test key is
 refused (403).
 
 ```java
@@ -528,7 +528,7 @@ Kloakd client = Kloakd.builder()
     .build();
 ```
 
-Every request sends `User-Agent: kloakd-sdk-java/0.6.0`.
+Every request sends `User-Agent: kloakd-sdk-java/0.7.0`.
 
 ### Retries
 

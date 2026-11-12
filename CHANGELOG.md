@@ -5,13 +5,13 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] — 2026-11-12
 
 Checked against kobe-scraper main 6bd19e9b; the batch and unified scrape
 methods and the route list are of integration/2026-11-12b (228857dc).
 **Breaking**: two methods and
 two records are removed, and two values the API never sent are no longer
-filled in (see Fixed), so the next release is 0.7.0. `ROUTES.md` lists the
+filled in (see Fixed), so this release is 0.7.0. `ROUTES.md` lists the
 routes.
 
 ### Fixed
@@ -51,6 +51,8 @@ routes.
 - `src/test/resources/routes.tsv` is the route list of kobe-scraper
   integration/2026-11-12b (228857dc): 280 routes. The API removed its 12
   `performance/...` routes; the SDK called none.
+- Version 0.7.0 (`pom.xml`, `HttpTransport.SDK_VERSION`, so `User-Agent:
+  kloakd-sdk-java/0.7.0` and `X-Kloakd-SDK: java/0.7.0`).
 
 ### Removed
 - `nexus().execute(...)` (both overloads) and `NexusExecuteResult`: the API
