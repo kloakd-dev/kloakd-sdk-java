@@ -5,6 +5,35 @@ All notable changes to the KLOAKD Java SDK will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Written against the crawl-estimate API contract of 14 November 2026
+(sections 1–4); the backend routes are being built to it in parallel.
+
+### Added
+- `webgrph().estimateCrawl(url[, maxDepth, maxPages | CrawlOptions])` (`POST
+  webgrph/crawl/estimate`) and `estimateCrawlExtract(url[, CrawlOptions,
+  extract])` (`POST webgrph/crawl-extract/estimate`) return a `CrawlEstimate`:
+  `mode`, `url`, `maxDepth`, `maxPages`, `planLimits`, `clamped`, `site`,
+  `estPages`, `willHitPageCap`, `timeBudgetS`, `estDurationS`, `estGb`,
+  `gbRemaining`, `willExhaustQuota`, `warning`, `explanation`. The body is the
+  one the job route takes. Not metered.
+- `webgrph().continueCrawl(crawlId, CrawlContinueOptions)` sends
+  `{max_pages?, max_depth?}`; `continueCrawl(crawlId)` and empty options
+  still send no body.
+- `webgrph().continueCrawlExtract(jobId[, CrawlContinueOptions])` (`POST
+  webgrph/crawl-extract/{job_id}/continue`).
+- `CrawlTiming.from(status)` reads `time_budget_s`, `elapsed_s` and
+  `est_remaining_s` from a status map (for a crawl-extract job).
+
+### Changed
+- `CrawlResult` has new components `timeBudgetS`, `elapsedS` and
+  `estRemainingS`, read from the crawl's status (null until reported). The
+  0.7.0 nineteen-argument and 0.6.0 ten-argument constructors are kept.
+- `LiveRoutesTest` also reads `src/test/resources/routes-contract-2026-11-14.tsv`,
+  the three routes of the contract that are not yet in the generated
+  `routes.tsv`.
+
 ## [0.7.0] — 2026-11-12
 
 Checked against kobe-scraper main 6bd19e9b; the batch and unified scrape

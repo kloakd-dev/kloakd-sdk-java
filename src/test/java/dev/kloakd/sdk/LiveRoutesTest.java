@@ -150,11 +150,16 @@ class LiveRoutesTest {
     void everySdkCallIsALiveRoute() throws IOException {
         var live = new HashSet<String>();
         var prefix = "/api/v1/organizations/{organization_id}/";
-        try (var in = getClass().getResourceAsStream("/routes.tsv")) {
-            for (String line : new String(in.readAllBytes()).split("\n")) {
-                var parts = line.split("\t", 2);
-                if (parts.length == 2 && parts[1].startsWith(prefix)) {
-                    live.add(parts[0] + " " + parts[1].substring(prefix.length()).replaceAll("\\{[^}]+}", "{}"));
+        // routes.tsv is generated from a kobe-scraper checkout; the second file lists the
+        // routes of the crawl-estimate contract (14 Nov 2026), built in parallel and not
+        // yet in a checkout the list was generated from.
+        for (String resource : List.of("/routes.tsv", "/routes-contract-2026-11-14.tsv")) {
+            try (var in = getClass().getResourceAsStream(resource)) {
+                for (String line : new String(in.readAllBytes()).split("\n")) {
+                    var parts = line.split("\t", 2);
+                    if (parts.length == 2 && parts[1].startsWith(prefix)) {
+                        live.add(parts[0] + " " + parts[1].substring(prefix.length()).replaceAll("\\{[^}]+}", "{}"));
+                    }
                 }
             }
         }
