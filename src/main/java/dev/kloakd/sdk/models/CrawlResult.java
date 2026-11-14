@@ -39,6 +39,9 @@ import java.util.List;
  * @param errorCode the API's code for a failure or an early stop (for example {@code held_quota_expired}), or null
  * @param message the API's text about the crawl's state (for a held crawl, why it is held), or null
  * @param held true when {@code status} is {@code held_quota}
+ * @param timeBudgetS the crawl's time budget in seconds ({@code time_budget_s}), or null until the crawl reports it
+ * @param elapsedS seconds the crawl has used ({@code elapsed_s}), or null until the crawl reports it
+ * @param estRemainingS estimated seconds left ({@code est_remaining_s}), or null until the crawl reports it
  */
 public record CrawlResult(
         boolean success,
@@ -59,12 +62,25 @@ public record CrawlResult(
         Integer pagesUnfetched,
         String errorCode,
         String message,
-        boolean held
+        boolean held,
+        Integer timeBudgetS,
+        Double elapsedS,
+        Double estRemainingS
 ) {
+    /** The 0.7.0 components only (no time budget fields). */
+    public CrawlResult(boolean success, String crawlId, String url, String status, int totalPages,
+            int maxDepthReached, List<PageNode> pages, int total, String artifactId, String error,
+            Boolean isPartial, String partialReason, Boolean resumable, Integer pagesDiscovered,
+            Integer pagesFetched, Integer pagesUnfetched, String errorCode, String message, boolean held) {
+        this(success, crawlId, url, status, totalPages, maxDepthReached, pages, total, artifactId, error,
+                isPartial, partialReason, resumable, pagesDiscovered, pagesFetched, pagesUnfetched,
+                errorCode, message, held, null, null, null);
+    }
+
     /** The 0.6.0 components only. */
     public CrawlResult(boolean success, String crawlId, String url, String status, int totalPages,
             int maxDepthReached, List<PageNode> pages, int total, String artifactId, String error) {
         this(success, crawlId, url, status, totalPages, maxDepthReached, pages, total, artifactId, error,
-                null, null, null, null, null, null, null, null, false);
+                null, null, null, null, null, null, null, null, false, null, null, null);
     }
 }

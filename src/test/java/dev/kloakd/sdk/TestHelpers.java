@@ -90,6 +90,8 @@ public final class TestHelpers {
         private final Map<String, java.util.List<MockResponse>> routes = new java.util.concurrent.ConcurrentHashMap<>();
         public final java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
         public final Map<String, Map<String, Object>> bodies = new java.util.concurrent.ConcurrentHashMap<>();
+        /** Each route's last request body as sent ("" when there was none). */
+        public final Map<String, String> rawBodies = new java.util.concurrent.ConcurrentHashMap<>();
 
         public Routes json(String route, int status, Object body) {
             try {
@@ -126,6 +128,7 @@ public final class TestHelpers {
             String key = request.getMethod() + " " + path.replaceFirst("^/api/v1/organizations/" + TEST_ORG_ID + "/", "");
             seen.add(key);
             String raw = request.getBody().readUtf8();
+            rawBodies.put(key, raw);
             try {
                 bodies.put(key, raw.isEmpty() ? Map.of() : MAPPER.readValue(raw, Map.class));
             } catch (Exception ignored) {

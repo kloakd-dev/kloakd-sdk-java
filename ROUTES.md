@@ -1,5 +1,21 @@
 # Routes called by the Java SDK
 
+## Unreleased: crawl estimate and continue with options
+
+Against the crawl-estimate contract of 14 November 2026 (the backend is
+built to it in parallel). The three new routes are listed in
+`src/test/resources/routes-contract-2026-11-14.tsv`, not in the generated
+`routes.tsv`.
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST webgrph/crawl/estimate` | `webgrph().estimateCrawl` | body as `POST webgrph/crawl`; returns `CrawlEstimate`; not metered |
+| `POST webgrph/crawl-extract/estimate` | `webgrph().estimateCrawlExtract` | body as `POST webgrph/crawl-extract`; needs Kolektr |
+| `POST webgrph/crawl/{crawl_id}/continue` | `webgrph().continueCrawl(crawlId, CrawlContinueOptions)` | optional body `{max_pages?, max_depth?}`; none when no options; 422 `continue_cannot_lower`; 409 |
+| `POST webgrph/crawl-extract/{job_id}/continue` | `webgrph().continueCrawlExtract` | same body; may answer 501 until built |
+| `GET webgrph/crawl/{crawl_id}` | `waitForCrawl`, `crawl` | `time_budget_s`, `elapsed_s`, `est_remaining_s` read into `CrawlResult` |
+| `GET webgrph/crawl-extract/{job_id}` | `getCrawlExtract` + `CrawlTiming.from` | the same three fields |
+
 ## 0.7.0: batch jobs and the unified scrape
 
 Checked against kobe-scraper integration/2026-11-12b (228857dc):

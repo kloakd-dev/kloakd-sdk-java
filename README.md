@@ -220,6 +220,33 @@ try (var events = client.parlyr().chatStream("session-1", "start")) {
 
 ### Crawls
 
+A crawl maps the site's pages and links; crawl-extract also returns the items on each page as rows.
+
+**Estimate, then start.** Before a crawl or crawl-extract starts, ask what
+it would do. The estimate takes the same options as the job, is not
+metered (no quota, no work slot), and answers with the depth and page limit
+after clamping to the plan, the pages the site seems to have, the pages to
+fetch, a duration range, the GB it would use against what remains, any
+warning and an explanation. Show it, then start with the same options or
+adjust them and estimate again:
+
+```java
+var options = CrawlOptions.builder().maxDepth(2).maxPages(200).buildAsSet();
+CrawlEstimate e = client.webgrph().estimateCrawl("https://example.com", options);
+System.out.printf("depth %d, %d-%d pages (%s), %.0f-%.0f s, %.2f GB of %s left%n",
+        e.maxDepth(), e.estPages().low(), e.estPages().high(), e.estPages().source(),
+        e.estDurationS().low(), e.estDurationS().high(), e.estGb(), e.gbRemaining());
+if (e.warning() != null) System.out.println(e.warning());
+if (!e.willExhaustQuota()) {
+    var done = client.webgrph().crawl("https://example.com", options);
+}
+// crawl-extract: estimateCrawlExtract(url, options, extract), then startCrawlExtract(url, options, extract)
+```
+
+`estPages().source()` is `sitemap`, `homepage_links` or `limit` (only the
+cap is known, for example when the site probe failed). `clamped()` is true
+when a requested limit was lowered to the plan's (`planLimits()`).
+
 Crawls run asynchronously. `crawl` starts one, waits for it and reads every
 page by cursor; `startCrawl` returns at once with the crawl ID and no status
 (`POST webgrph/crawl` does not answer with one: `status()` is null until a
@@ -278,6 +305,24 @@ if (Boolean.TRUE.equals(done.resumable())) {
 `continueCrawl` throws `ApiException` (409) when the crawl is not one that
 stopped at its time budget, has not ended, or is already being continued.
 An ID the API does not know is answered the same way (409, not 404).
+
+To continue with higher limits, pass `CrawlContinueOptions` (estimate the
+new limits first with `estimateCrawl`). A crawl that stopped at `max_pages`
+can be continued when a larger `maxPages` is given. Limits may only rise: a
+lower one is answered with 422 `continue_cannot_lower`. With no options no
+body is sent, exactly as `continueCrawl(crawlId)`. `continueCrawlExtract`
+does the same for a crawl-extract job:
+
+```java
+client.webgrph().continueCrawl(done.crawlId(), CrawlContinueOptions.builder().maxPages(500).build());
+client.webgrph().continueCrawlExtract(jobId, CrawlContinueOptions.builder().maxPages(500).build());
+```
+
+**Time used.** `CrawlResult.timeBudgetS()`, `elapsedS()` and
+`estRemainingS()` give the crawl's time against its budget (null until the
+crawl reports them). For a crawl-extract status map,
+`CrawlTiming.from(client.webgrph().getCrawlExtract(jobId))` reads the same
+three fields.
 
 Pages are read from `webgrph/crawl/{id}/pages` (`getCrawlPages(crawlId,
 cursor, limit[, includeGrouping])`): `limit` is 1–1000 (0 for the API's
