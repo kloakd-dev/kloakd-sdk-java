@@ -6,7 +6,7 @@ Against the cost-control contract of 15 November 2026
 (`COST-CONTROL-CONTRACT.md`, sections 1–5 and 8; the backend is built to it
 in parallel). The three new routes are listed in
 `src/test/resources/routes-contract-2026-11-15.tsv`, not in the generated
-`routes.tsv`.
+`routes.tsv`. Checked on 15 Nov against the route table of kobe-scraper feature/2026-11-15-cost-control at f6403fc5, generated with the module routers mounted as `kernel/bootstrap.py` does: it matches the Python SDK's 286-row list (this SDK's `routes.tsv` plus the two contract files) except routes these lists have never carried (FastAPI's `/docs`, `/redoc`, `/openapi.json`, and the watcher and crawler health routes under `/api/v1/health/`, which take the watch token), so the list stands as the generated one.
 
 | Call | Java method | Notes |
 |---|---|---|
