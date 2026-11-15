@@ -51,10 +51,23 @@ and 8); the backend is being built to it in parallel.
   `ALL`. With capture mode `visual` a crawl includes images and stylesheets
   automatically.
 - `FetchOptions.includeResources` (sent as `include_resources` by
-  `evadr().fetch`, `POST evadr/fetch`, only when set; not by the async fetch)
-  and `ExtractOptions.includeResources` (sent by `kolektr().extract`, `POST
-  kolektr/extract`, only when set). Their previous constructors are kept, and
-  calls without it send exactly what they sent before.
+  `evadr().fetch`, `POST evadr/fetch`, and by `startFetchJob`, `fetchAsync`
+  and `fetchStream`, `POST evadr/fetch/async`, only when set),
+  `ExtractOptions.includeResources` (sent by `kolektr().extract`, `POST
+  kolektr/extract`, only when set) and `kolektr().extractHtml(html, url,
+  schema, itemSelector, includeResources)` (`POST kolektr/extract/html`).
+  Their previous constructors and overloads are kept, and calls without it
+  send exactly what they sent before.
+- `CrawlEstimate.includeResourcesLocked` (`include_resources_locked`): the
+  extras that cannot be turned off (capture mode `visual` locks images and
+  stylesheets); `includeResources` is the effective set. The estimates send
+  `capture_mode` when `CrawlOptions.captureMode` is set.
+- `continueCrawlExtract` is documented against the built route: 202 with
+  `limits`, `links` and, when known, `time_budget_s`, `elapsed_s` and
+  `max_data_mb` (read with `CrawlTiming.from` and `CrawlDataUse.from`); 409
+  `continue_needs_more_pages`, `continue_needs_more_data`, `not_continuable`,
+  `already_continuing`; 422 `continue_cannot_lower`. The note that it might
+  answer 501 is gone.
 - `CrawlContinueOptions.maxDataMb` (`max_data_mb` on both continue routes).
 - `CrawlEstimate` gains `includeResources`, `data` (`DataUse`: `source`,
   `perPageMb`, `totalMb`, `totalMbAllResources`, `savingMb` as `DataRange`

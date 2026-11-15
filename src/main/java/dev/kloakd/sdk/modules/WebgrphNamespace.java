@@ -76,7 +76,11 @@ public final class WebgrphNamespace {
         return body;
     }
 
-    /** The job body without the fields an estimate does not take (only {@code include_resources} of the new ones). */
+    /**
+     * The job body without the fields an estimate does not take: of the cost-control
+     * fields only {@code include_resources}; {@code capture_mode} is sent when set (the
+     * estimate takes the job's body; {@code visual} locks images and stylesheets on).
+     */
     private static HashMap<String, Object> estimateBody(String url, CrawlOptions o) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
@@ -270,7 +274,10 @@ public final class WebgrphNamespace {
      * A crawl maps the site's pages and links; crawl-extract also returns
      * the items on each page as rows.
      *
-     * <p>Of the cost-control options only {@code includeResources} is sent:
+     * <p>Of the cost-control options only {@code includeResources} is sent
+     * (with {@code captureMode} when set: {@code visual} locks images and
+     * stylesheets on, listed in {@code includeResourcesLocked()}, and
+     * {@code includeResources()} is then the effective set):
      * the estimate's {@code data()} gives the MB per page and for the job
      * (typical and high), what loading every extra would add and what leaving
      * each out saves; {@code shareOfRemaining()}, {@code risks()},
@@ -452,8 +459,18 @@ public final class WebgrphNamespace {
      * to the plan and only allowed to rise. Wait for the job again with
      * {@link #waitForCrawlExtract(String)}.
      *
-     * @throws dev.kloakd.sdk.errors.ApiException 422 {@code continue_cannot_lower}; 409: the job
-     *         cannot be continued; 501 if the API does not support it yet
+     * <p>The API answers 202 with {@code {success, job_id, crawl_id, status,
+     * limits: {max_pages, max_depth}, links}} and, when known, {@code time_budget_s},
+     * {@code elapsed_s} and {@code max_data_mb}; {@link CrawlTiming#from(Map)} and
+     * {@link CrawlDataUse#from(Map)} read the optional ones from the answer.
+     *
+     * @return the API's answer, every field as sent
+     * @throws dev.kloakd.sdk.errors.ApiException 422 {@code continue_cannot_lower}: a limit is lower
+     *         than the job's; 409 (the code in {@code getCode()}): {@code continue_needs_more_pages}
+     *         (the crawl stopped at {@code max_pages}; give a larger {@code maxPages}),
+     *         {@code continue_needs_more_data} (it stopped at its data limit; give a larger
+     *         {@code maxDataMb}), {@code not_continuable} (the job cannot be continued), or
+     *         {@code already_continuing}
      */
     public Map<String, Object> continueCrawlExtract(String jobId, CrawlContinueOptions options) {
         return t.post("webgrph/crawl-extract/" + seg(jobId) + "/continue", options == null ? null : options.toBody());

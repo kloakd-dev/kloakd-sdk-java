@@ -31,8 +31,9 @@ import java.util.Map;
  * @param willExhaustQuota true when the estimate is more than what remains
  * @param warning          a plain sentence to show the user, or null
  * @param explanation      what this mode does, in the API's words
- * @param includeResources the page extras the estimate assumed ({@code include_resources}; empty: none,
- *                         the default), or null when not sent
+ * @param includeResources the page extras the estimate assumed ({@code include_resources}): the
+ *                         effective set, the ones asked for plus any locked on (empty: none, the
+ *                         default), or null when not sent
  * @param data             the data the job would use ({@code data}), or null when not sent
  * @param shareOfRemaining the share of the remaining allowance it would use, as fractions
  *                         ({@code share_of_remaining}: 0.04 is 4%), or null when not sent or unknown
@@ -43,6 +44,9 @@ import java.util.Map;
  *                         estimate, rounded up), or null when not sent
  * @param estimateId       an opaque token for this estimate, valid 30 minutes ({@code estimate_id}),
  *                         or null when not sent
+ * @param includeResourcesLocked the extras the user cannot turn off ({@code include_resources_locked}):
+ *                         capture mode {@code visual} locks {@code images} and {@code stylesheets};
+ *                         null when not sent
  */
 public record CrawlEstimate(
         String mode,
@@ -67,8 +71,20 @@ public record CrawlEstimate(
         boolean consentRequired,
         List<String> risks,
         Double suggestedMaxDataMb,
-        String estimateId
+        String estimateId,
+        List<String> includeResourcesLocked
 ) {
+
+    /** The components before {@code includeResourcesLocked}. */
+    public CrawlEstimate(String mode, String url, int maxDepth, int maxPages, PlanLimits planLimits,
+            boolean clamped, Site site, Pages estPages, boolean willHitPageCap, Integer timeBudgetS,
+            Range estDurationS, double estGb, Double gbRemaining, boolean willExhaustQuota, String warning,
+            String explanation, List<String> includeResources, DataUse data, DataRange shareOfRemaining,
+            boolean consentRequired, List<String> risks, Double suggestedMaxDataMb, String estimateId) {
+        this(mode, url, maxDepth, maxPages, planLimits, clamped, site, estPages, willHitPageCap, timeBudgetS,
+                estDurationS, estGb, gbRemaining, willExhaustQuota, warning, explanation, includeResources, data,
+                shareOfRemaining, consentRequired, risks, suggestedMaxDataMb, estimateId, null);
+    }
 
     /** The 14 Nov components only (no data, consent or estimate id). */
     public CrawlEstimate(String mode, String url, int maxDepth, int maxPages, PlanLimits planLimits,
@@ -77,7 +93,7 @@ public record CrawlEstimate(
             String explanation) {
         this(mode, url, maxDepth, maxPages, planLimits, clamped, site, estPages, willHitPageCap, timeBudgetS,
                 estDurationS, estGb, gbRemaining, willExhaustQuota, warning, explanation,
-                null, null, null, false, List.of(), null, null);
+                null, null, null, false, List.of(), null, null, null);
     }
 
     /**
@@ -170,7 +186,8 @@ public record CrawlEstimate(
                 bool(m, "consent_required"),
                 m.get("risks") instanceof List<?> ? strings(m.get("risks")) : List.of(),
                 optDbl(m, "suggested_max_data_mb"),
-                str(m, "estimate_id"));
+                str(m, "estimate_id"),
+                strings(m.get("include_resources_locked")));
     }
 
     private static DataUse dataUse(Map<String, Object> d) {

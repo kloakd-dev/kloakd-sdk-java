@@ -253,8 +253,10 @@ and audio, fonts, stylesheets and tracking are not loaded unless the job
 includes them. Include any of them per job with `includeResources` (the
 names are in `ResourceTypes`; `ResourceTypes.ALL` loads a page as a browser
 would). With capture mode `visual`, images and stylesheets are included
-automatically. The estimate takes `includeResources` too and says what each
-extra would cost.
+automatically. The estimate takes `includeResources` and `captureMode` too
+and says what each extra would cost; its `includeResources()` is the
+effective set, and `includeResourcesLocked()` lists the extras that cannot be
+turned off (`images` and `stylesheets` for `visual`).
 
 Extras are off on every browser route, not only crawls: `evadr().fetch` and
 `kolektr().extract` take `includeResources` too (`FetchOptions`,
@@ -267,9 +269,10 @@ client.kolektr().extract("https://example.com", ExtractOptions.builder()
         .includeResources(ResourceTypes.STYLESHEETS).build());
 ```
 
-Only `fetch` sends it of the Evadr calls; `startFetchJob`, `fetchAsync` and
-`fetchStream` (`POST evadr/fetch/async`) do not. `extractHtml` takes HTML you
-already have and loads no page, so it has no extras.
+The asynchronous fetch (`startFetchJob`, `fetchAsync`, `fetchStream`; `POST
+evadr/fetch/async`) sends `FetchOptions.includeResources` too, and
+`extractHtml(html, url, schema, itemSelector, includeResources)` takes it for
+`POST kolektr/extract/html`. Each is sent only when set.
 
 **Data use, the data limit and consent.** The estimate's `data()` gives the
 MB per page and for the job (typical and high, with the job's low too), the
@@ -399,8 +402,18 @@ does the same for a crawl-extract job:
 
 ```java
 client.webgrph().continueCrawl(done.crawlId(), CrawlContinueOptions.builder().maxPages(500).build());
-client.webgrph().continueCrawlExtract(jobId, CrawlContinueOptions.builder().maxPages(500).build());
+Map<String, Object> cont = client.webgrph().continueCrawlExtract(jobId,
+        CrawlContinueOptions.builder().maxPages(500).build());
+// 202: success, job_id, crawl_id, status, limits {max_pages, max_depth}, links,
+// and when known time_budget_s, elapsed_s, max_data_mb
+Double newLimit = CrawlDataUse.from(cont).maxDataMb();
 ```
+
+`continueCrawlExtract` throws `ApiException` with `getCode()`:
+`continue_needs_more_pages` (409; the crawl stopped at `max_pages`, give a
+larger `maxPages`), `continue_needs_more_data` (409; it stopped at its data
+limit, give a larger `maxDataMb`), `not_continuable` (409),
+`already_continuing` (409) or `continue_cannot_lower` (422).
 
 **Time used.** `CrawlResult.timeBudgetS()`, `elapsedS()` and
 `estRemainingS()` give the crawl's time against its budget (null until the

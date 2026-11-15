@@ -54,7 +54,6 @@ public final class EvadrNamespace {
      */
     public FetchResult fetch(String url, FetchOptions opts) {
         var body = fetchBody(url, opts);
-        if (opts.includeResources() != null) body.put("include_resources", opts.includeResources());
         return parseFetchResult(t.postFollowing("evadr/fetch", body, interval(opts), limit(opts)));
     }
 
@@ -68,6 +67,7 @@ public final class EvadrNamespace {
         if (o.forceBrowser()) body.put("force_browser", true);
         if (o.useProxy()) body.put("use_proxy", true);
         if (o.sessionArtifactId() != null) body.put("session_artifact_id", o.sessionArtifactId());
+        if (o.includeResources() != null) body.put("include_resources", o.includeResources());
         return body;
     }
 
@@ -80,7 +80,10 @@ public final class EvadrNamespace {
         return parseFetchResult(t.followHandOff(jobId, "evadr/jobs/" + seg(jobId), pollInterval, pollTimeout));
     }
 
-    /** Start an asynchronous fetch ({@code POST evadr/fetch/async}) and return its job ID. */
+    /**
+     * Start an asynchronous fetch ({@code POST evadr/fetch/async}) and return its job ID.
+     * Page extras are off by default: {@code includeResources} unset means none, and is then not sent.
+     */
     public String startFetchJob(String url, FetchOptions opts) {
         var body = fetchBody(url, opts);
         if (opts.webhookUrl() != null) body.put("webhook_url", opts.webhookUrl());

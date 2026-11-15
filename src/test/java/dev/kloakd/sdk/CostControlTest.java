@@ -162,13 +162,64 @@ class CostControlTest {
     }
 
     @Test
-    void evadrFetchAsync_doesNotSendIncludeResources() {
+    void evadrFetchAsync_sendsIncludeResourcesWhenSet() {
         routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j1"));
 
         client.evadr().startFetchJob("https://example.com/",
-                FetchOptions.builder().includeResources(ResourceTypes.ALL).build());
+                FetchOptions.builder().webhookUrl("https://hook.example/x").includeResources(ResourceTypes.ALL).build());
 
+        assertEquals(Map.of("url", "https://example.com/", "webhook_url", "https://hook.example/x",
+                "include_resources", List.of("images", "media", "fonts", "stylesheets", "tracking")),
+                routes.bodies.get("POST evadr/fetch/async"));
+    }
+
+    @Test
+    void evadrFetchAsync_oldCallsSendNoIncludeResources() {
+        routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j1"));
+
+        client.evadr().startFetchJob("https://example.com/", true, false, null, null);
+        assertEquals(Map.of("url", "https://example.com/", "force_browser", true),
+                routes.bodies.get("POST evadr/fetch/async"));
+        client.evadr().startFetchJob("https://example.com/", FetchOptions.builder().build());
         assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST evadr/fetch/async"));
+    }
+
+    @Test
+    void evadrFetchStream_sendsIncludeResourcesOnTheAsyncStart() {
+        routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j1"));
+        routes.sse("GET evadr/jobs/j1/events", Map.of("type", "complete", "job_id", "j1"));
+
+        try (var events = client.evadr().fetchStream("https://example.com/",
+                FetchOptions.builder().includeResources(ResourceTypes.FONTS).build())) {
+            events.findFirst();
+        }
+
+        assertEquals(Map.of("url", "https://example.com/", "include_resources", List.of("fonts")),
+                routes.bodies.get("POST evadr/fetch/async"));
+    }
+
+    @Test
+    void kolektrExtractHtml_sendsIncludeResourcesWhenSet() {
+        routes.json("POST kolektr/extract/html", 200, Map.of("success", true, "url", "https://example.com/"));
+
+        client.kolektr().extractHtml("<html></html>", "https://example.com/", null, null, List.of("images"));
+
+        assertEquals(Map.of("html", "<html></html>", "url", "https://example.com/", "include_resources", List.of("images")),
+                routes.bodies.get("POST kolektr/extract/html"));
+    }
+
+    @Test
+    void kolektrExtractHtml_oldOverloadsSendNoIncludeResources() {
+        routes.json("POST kolektr/extract/html", 200, Map.of("success", true, "url", "https://example.com/"));
+
+        client.kolektr().extractHtml("<html></html>", "https://example.com/");
+        assertEquals(Map.of("html", "<html></html>", "url", "https://example.com/"),
+                routes.bodies.get("POST kolektr/extract/html"));
+        client.kolektr().extractHtml("<html></html>", "https://example.com/", Map.of("title", "css:h1"), ".item");
+        assertFalse(routes.bodies.get("POST kolektr/extract/html").containsKey("include_resources"));
+        client.kolektr().extractHtml("<html></html>", "https://example.com/", null, null, null);
+        assertEquals(Map.of("html", "<html></html>", "url", "https://example.com/"),
+                routes.bodies.get("POST kolektr/extract/html"));
     }
 
     @Test
@@ -211,6 +262,41 @@ class CostControlTest {
         assertEquals(List.of(), routes.bodies.get("POST kolektr/extract").get("include_resources"));
     }
 
+    // ── estimate: capture mode and locked extras ─────────────────────────────
+
+    @Test
+    void estimate_sendsCaptureModeAndReadsTheLockedExtras() {
+        var answer = new HashMap<>(costEstimate());
+        answer.put("include_resources", List.of("images", "stylesheets"));
+        answer.put("include_resources_locked", List.of("images", "stylesheets"));
+        routes.json("POST webgrph/crawl/estimate", 200, answer);
+        routes.json("POST webgrph/crawl-extract/estimate", 200, answer);
+
+        var e = client.webgrph().estimateCrawl("https://example.com/",
+                CrawlOptions.builder().captureMode("visual").buildAsSet());
+        assertEquals(Map.of("url", "https://example.com/", "capture_mode", "visual"),
+                routes.bodies.get("POST webgrph/crawl/estimate"));
+        assertEquals(List.of("images", "stylesheets"), e.includeResourcesLocked());
+        assertEquals(List.of("images", "stylesheets"), e.includeResources());
+
+        client.webgrph().estimateCrawlExtract("https://example.com/",
+                CrawlOptions.builder().captureMode("visual").includeResources(ResourceTypes.FONTS).buildAsSet(), null);
+        assertEquals(Map.of("url", "https://example.com/", "capture_mode", "visual", "include_resources", List.of("fonts")),
+                routes.bodies.get("POST webgrph/crawl-extract/estimate"));
+    }
+
+    @Test
+    void estimate_lockedExtrasAreNullWhenAbsent() {
+        routes.json("POST webgrph/crawl/estimate", 200, costEstimate());
+
+        assertNull(client.webgrph().estimateCrawl("https://example.com/").includeResourcesLocked());
+        // the constructor before includeResourcesLocked still works
+        var e = new CrawlEstimate("crawl", "u", 1, 1, null, false, null, null, false, null, null, 0, null,
+                false, null, null, List.of(), null, null, false, List.of(), null, "id");
+        assertNull(e.includeResourcesLocked());
+        assertEquals("id", e.estimateId());
+    }
+
     // ── continue ─────────────────────────────────────────────────────────────
 
     @Test
@@ -230,6 +316,43 @@ class CostControlTest {
                 CrawlContinueOptions.builder().maxPages(50).maxDataMb(80.5).build());
         assertEquals(Map.of("max_pages", 50, "max_data_mb", 80.5),
                 routes.bodies.get("POST webgrph/crawl-extract/job-1/continue"));
+    }
+
+    @Test
+    void continueCrawlExtract_readsTheBuiltAnswer() {
+        var answer = new HashMap<String, Object>();
+        answer.put("success", true);
+        answer.put("job_id", "job-1");
+        answer.put("crawl_id", "c9");
+        answer.put("status", "queued");
+        answer.put("limits", Map.of("max_pages", 500, "max_depth", 3));
+        answer.put("links", Map.of("status", "/x"));
+        answer.put("time_budget_s", 900);
+        answer.put("elapsed_s", 120.5);
+        answer.put("max_data_mb", 200);
+        routes.json("POST webgrph/crawl-extract/job-1/continue", 202, answer);
+
+        var r = client.webgrph().continueCrawlExtract("job-1", CrawlContinueOptions.builder().maxDataMb(200).build());
+
+        assertEquals("c9", r.get("crawl_id"));
+        assertEquals(Map.of("max_pages", 500, "max_depth", 3), r.get("limits"));
+        assertEquals(900, CrawlTiming.from(r).timeBudgetS());
+        assertEquals(120.5, CrawlTiming.from(r).elapsedS());
+        assertEquals(200.0, CrawlDataUse.from(r).maxDataMb());
+    }
+
+    @Test
+    void continueCrawlExtract_errorCodes() {
+        for (var c : List.of(Map.entry(409, "continue_needs_more_pages"), Map.entry(409, "continue_needs_more_data"),
+                Map.entry(409, "not_continuable"), Map.entry(409, "already_continuing"),
+                Map.entry(422, "continue_cannot_lower"))) {
+            var route = "POST webgrph/crawl-extract/" + c.getValue() + "/continue";
+            routes.json(route, c.getKey(), Map.of("detail", Map.of("error", c.getValue(), "message", "no")));
+            var ex = assertThrows(ApiException.class, () -> client.webgrph().continueCrawlExtract(c.getValue()));
+            assertEquals(c.getKey(), ex.getStatusCode());
+            assertEquals(c.getValue(), ex.getCode());
+            assertFalse(ex instanceof ConcurrencyLimitException || ex instanceof CostAcknowledgementRequiredException);
+        }
     }
 
     // ── estimate response ────────────────────────────────────────────────────

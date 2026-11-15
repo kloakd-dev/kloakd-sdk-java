@@ -15,8 +15,9 @@ import java.util.List;
  * @param pollTimeout limit on following a handed-off job, or null for the client's
  * @param includeResources the page extras a browser tier loads ({@code include_resources};
  *                         {@link ResourceTypes}): page extras are off by default on every browser
- *                         route, and null (unset) means none. Sent by {@code fetch} only
- *                         ({@code POST evadr/fetch}); the async fetch does not send it
+ *                         route, and null (unset) means none. Sent by {@code fetch}
+ *                         ({@code POST evadr/fetch}) and by {@code startFetchJob}, {@code fetchAsync}
+ *                         and {@code fetchStream} ({@code POST evadr/fetch/async})
  */
 public record FetchOptions(
         boolean forceBrowser,
