@@ -1,5 +1,9 @@
 package dev.kloakd.sdk.models;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,6 +31,22 @@ import java.util.Map;
  * @param willExhaustQuota true when the estimate is more than what remains
  * @param warning          a plain sentence to show the user, or null
  * @param explanation      what this mode does, in the API's words
+ * @param includeResources the page extras the estimate assumed ({@code include_resources}): the
+ *                         effective set, the ones asked for plus any locked on (empty: none, the
+ *                         default), or null when not sent
+ * @param data             the data the job would use ({@code data}), or null when not sent
+ * @param shareOfRemaining the share of the remaining allowance it would use, as fractions
+ *                         ({@code share_of_remaining}: 0.04 is 4%), or null when not sent or unknown
+ * @param consentRequired  true when the job is large against what remains: a dashboard session must
+ *                         start it with {@code estimateId} and {@code costAcknowledged}
+ * @param risks            plain sentences about what may go wrong or cost more (empty when none sent)
+ * @param suggestedMaxDataMb a data limit to start the job with ({@code suggested_max_data_mb}: the high
+ *                         estimate, rounded up), or null when not sent
+ * @param estimateId       an opaque token for this estimate, valid 30 minutes ({@code estimate_id}),
+ *                         or null when not sent
+ * @param includeResourcesLocked the extras the user cannot turn off ({@code include_resources_locked}):
+ *                         capture mode {@code visual} locks {@code images} and {@code stylesheets};
+ *                         null when not sent
  */
 public record CrawlEstimate(
         String mode,
@@ -44,8 +64,62 @@ public record CrawlEstimate(
         Double gbRemaining,
         boolean willExhaustQuota,
         String warning,
-        String explanation
+        String explanation,
+        List<String> includeResources,
+        DataUse data,
+        DataRange shareOfRemaining,
+        boolean consentRequired,
+        List<String> risks,
+        Double suggestedMaxDataMb,
+        String estimateId,
+        List<String> includeResourcesLocked
 ) {
+
+    /** The components before {@code includeResourcesLocked}. */
+    public CrawlEstimate(String mode, String url, int maxDepth, int maxPages, PlanLimits planLimits,
+            boolean clamped, Site site, Pages estPages, boolean willHitPageCap, Integer timeBudgetS,
+            Range estDurationS, double estGb, Double gbRemaining, boolean willExhaustQuota, String warning,
+            String explanation, List<String> includeResources, DataUse data, DataRange shareOfRemaining,
+            boolean consentRequired, List<String> risks, Double suggestedMaxDataMb, String estimateId) {
+        this(mode, url, maxDepth, maxPages, planLimits, clamped, site, estPages, willHitPageCap, timeBudgetS,
+                estDurationS, estGb, gbRemaining, willExhaustQuota, warning, explanation, includeResources, data,
+                shareOfRemaining, consentRequired, risks, suggestedMaxDataMb, estimateId, null);
+    }
+
+    /** The 14 Nov components only (no data, consent or estimate id). */
+    public CrawlEstimate(String mode, String url, int maxDepth, int maxPages, PlanLimits planLimits,
+            boolean clamped, Site site, Pages estPages, boolean willHitPageCap, Integer timeBudgetS,
+            Range estDurationS, double estGb, Double gbRemaining, boolean willExhaustQuota, String warning,
+            String explanation) {
+        this(mode, url, maxDepth, maxPages, planLimits, clamped, site, estPages, willHitPageCap, timeBudgetS,
+                estDurationS, estGb, gbRemaining, willExhaustQuota, warning, explanation,
+                null, null, null, false, List.of(), null, null, null);
+    }
+
+    /**
+     * A data range in MB (or, for {@code shareOfRemaining}, a fraction).
+     *
+     * @param low     the low estimate, or null when the API gives none (only {@code total_mb} has one)
+     * @param typical the typical estimate
+     * @param high    the high estimate
+     */
+    public record DataRange(Double low, double typical, double high) {}
+
+    /**
+     * The data the job would use ({@code data}; cost-control contract of 15 Nov 2026, section 4).
+     *
+     * @param source             where the page weight came from: {@code site_profile} (measured pages
+     *                           of the host), {@code root_page} (the start page) or {@code typical}
+     * @param perPageMb          MB per page with the chosen extras ({@code per_page_mb})
+     * @param totalMb            MB for the whole job ({@code total_mb})
+     * @param totalMbAllResources MB for the whole job if every extra were loaded
+     * @param savingMb           MB saved by leaving the other extras out ({@code saving_mb})
+     * @param byCategoryMbPerPage MB per page by category: document, script, data, images, media,
+     *                           fonts, stylesheets, tracking
+     * @param savingByCategoryMb MB the job saves by leaving each extra out
+     */
+    public record DataUse(String source, DataRange perPageMb, DataRange totalMb, DataRange totalMbAllResources,
+            DataRange savingMb, Map<String, Double> byCategoryMbPerPage, Map<String, Double> savingByCategoryMb) {}
 
     /**
      * The plan's crawl limits ({@code plan_limits}).
@@ -105,7 +179,40 @@ public record CrawlEstimate(
                 optDbl(m, "gb_remaining"),
                 bool(m, "will_exhaust_quota"),
                 str(m, "warning"),
-                str(m, "explanation"));
+                str(m, "explanation"),
+                strings(m.get("include_resources")),
+                dataUse(map(m.get("data"))),
+                range(map(m.get("share_of_remaining"))),
+                bool(m, "consent_required"),
+                m.get("risks") instanceof List<?> ? strings(m.get("risks")) : List.of(),
+                optDbl(m, "suggested_max_data_mb"),
+                str(m, "estimate_id"),
+                strings(m.get("include_resources_locked")));
+    }
+
+    private static DataUse dataUse(Map<String, Object> d) {
+        if (d == null) return null;
+        return new DataUse(str(d, "source"), range(map(d.get("per_page_mb"))), range(map(d.get("total_mb"))),
+                range(map(d.get("total_mb_all_resources"))), range(map(d.get("saving_mb"))),
+                mbMap(map(d.get("by_category_mb_per_page"))), mbMap(map(d.get("saving_by_category_mb"))));
+    }
+
+    private static DataRange range(Map<String, Object> r) {
+        return r == null ? null : new DataRange(optDbl(r, "low"), dbl(r, "typical"), dbl(r, "high"));
+    }
+
+    private static Map<String, Double> mbMap(Map<String, Object> m) {
+        if (m == null) return Map.of();
+        var out = new LinkedHashMap<String, Double>();
+        for (var e : m.entrySet()) if (e.getValue() instanceof Number n) out.put(e.getKey(), n.doubleValue());
+        return Collections.unmodifiableMap(out);
+    }
+
+    private static List<String> strings(Object v) {
+        if (!(v instanceof List<?> list)) return null;
+        var out = new ArrayList<String>();
+        for (var item : list) if (item instanceof String s) out.add(s);
+        return Collections.unmodifiableList(out);
     }
 
     @SuppressWarnings("unchecked")

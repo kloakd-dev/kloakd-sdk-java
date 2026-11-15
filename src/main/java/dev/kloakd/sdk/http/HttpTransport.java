@@ -605,6 +605,10 @@ public class HttpTransport {
             return new ConcurrencyLimitException(msg, intVal(detail, "concurrent_limit", 0),
                     active, optInt(detail, "active_requests"), str(detail, "tier"));
         }
+        if (status == 409 && CostAcknowledgementRequiredException.CODE.equals(first(detail, body, "error"))) {
+            // cost-control contract of 15 Nov 2026, section 4
+            return new CostAcknowledgementRequiredException(msg);
+        }
         if (status == 429 && "gb_exhausted".equals(code)) return new QuotaExceededException(msg, upgradeUrl,
                 dbl(detail, "residential_gb_used"), dbl(detail, "residential_gb_limit"),
                 dbl(detail, "purchased_gb_balance"), str(detail, "tier"));

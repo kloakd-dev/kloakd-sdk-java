@@ -1,5 +1,6 @@
 package dev.kloakd.sdk.models;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -18,6 +19,9 @@ import java.util.Map;
  *                     {@code schema_spec.item_selector}, so each matching element is one
  *                     record and every field selector is read inside it (since 0.6.0;
  *                     overrides an {@code item_selector} in {@code schema})
+ * @param includeResources the page extras the extraction's browser loads ({@code include_resources};
+ *                         {@link ResourceTypes}): page extras are off by default on every browser
+ *                         route, and null (unset) means none
  */
 public record ExtractOptions(
         Map<String, ?> schema,
@@ -27,12 +31,21 @@ public record ExtractOptions(
         String sessionArtifactId,
         String apiMapArtifactId,
         String pipelineId,
-        String itemSelector
+        String itemSelector,
+        List<String> includeResources
 ) {
+    /** The 0.6.0 constructor (no page extras). */
+    public ExtractOptions(Map<String, ?> schema, String level, Map<String, Object> options,
+            String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId, String pipelineId,
+            String itemSelector) {
+        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, itemSelector,
+                null);
+    }
+
     /** The 0.5.0 constructor (no item selector). */
     public ExtractOptions(Map<String, ?> schema, String level, Map<String, Object> options,
             String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId, String pipelineId) {
-        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, null);
+        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, null, null);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -46,6 +59,7 @@ public record ExtractOptions(
         private String apiMapArtifactId;
         private String pipelineId;
         private String itemSelector;
+        private List<String> includeResources;
 
         private Builder() {}
 
@@ -59,9 +73,14 @@ public record ExtractOptions(
         public Builder apiMapArtifactId(String id) { this.apiMapArtifactId = id; return this; }
         public Builder pipelineId(String id) { this.pipelineId = id; return this; }
 
+        /** The page extras to load ({@link ResourceTypes}); unset means none (the default). */
+        public Builder includeResources(List<String> includeResources) { this.includeResources = includeResources == null ? null : List.copyOf(includeResources); return this; }
+        /** The page extras to load ({@link ResourceTypes}). */
+        public Builder includeResources(String... includeResources) { return includeResources(List.of(includeResources)); }
+
         public ExtractOptions build() {
             return new ExtractOptions(schema, level, options, fetchArtifactId, sessionArtifactId,
-                    apiMapArtifactId, pipelineId, itemSelector);
+                    apiMapArtifactId, pipelineId, itemSelector, includeResources);
         }
     }
 }

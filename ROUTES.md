@@ -1,5 +1,25 @@
 # Routes called by the Java SDK
 
+## Unreleased: cost control
+
+Against the cost-control contract of 15 November 2026
+(`COST-CONTROL-CONTRACT.md`, sections 1–5 and 8; the backend is built to it
+in parallel). The three new routes are listed in
+`src/test/resources/routes-contract-2026-11-15.tsv`, not in the generated
+`routes.tsv`. Checked on 15 Nov against the route table of kobe-scraper feature/2026-11-15-cost-control at f6403fc5, generated with the module routers mounted as `kernel/bootstrap.py` does: it matches the Python SDK's 286-row list (this SDK's `routes.tsv` plus the two contract files) except routes these lists have never carried (FastAPI's `/docs`, `/redoc`, `/openapi.json`, and the watcher and crawler health routes under `/api/v1/health/`, which take the watch token), so the list stands as the generated one.
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST webgrph/map` | `webgrph().mapSite` | body `{url, max_urls?}`; returns `SiteMap`; metered like a crawl |
+| `GET artifacts/{artifact_id}` | `getArtifact` | returns `Artifact` (`final_url`, `status_code`, `verified`, `content_url` too); 404 `Artifact not found` for anything but your fetched pages; 403 wrong organisation; 422 id not a UUID |
+| `GET artifacts/{artifact_id}/content` | `downloadArtifact` | the page's HTML bytes (`text/html; charset=utf-8`, attachment `<host>-<id8>.html`); same errors |
+| `POST webgrph/crawl`, `POST webgrph/crawl-extract` | `startCrawl`, `crawl`, `startCrawlExtract`, `crawlExtract` | also `include_resources?`, `max_data_mb?`, `estimate_id?`, `cost_acknowledged?` (only when true), `urls?`, `include_paths?`; 409 `cost_acknowledgement_required` |
+| `POST evadr/fetch`, `POST evadr/fetch/async` | `evadr().fetch`, `startFetchJob`, `fetchAsync`, `fetchStream` | also `include_resources?` (`FetchOptions`) |
+| `POST kolektr/extract`, `POST kolektr/extract/html` | `kolektr().extract` (`ExtractOptions`), `extractHtml(..., includeResources)` | also `include_resources?` |
+| `POST webgrph/crawl/estimate`, `POST webgrph/crawl-extract/estimate` | `estimateCrawl`, `estimateCrawlExtract` | also `include_resources?` (and `capture_mode?` as before); answer adds `include_resources` (the effective set), `include_resources_locked`, `data`, `share_of_remaining`, `consent_required`, `risks`, `suggested_max_data_mb`, `estimate_id` |
+| `POST webgrph/crawl/{crawl_id}/continue`, `POST webgrph/crawl-extract/{job_id}/continue` | `continueCrawl`, `continueCrawlExtract` | body also `max_data_mb?` |
+| `GET webgrph/crawl/{crawl_id}`, `GET webgrph/crawl-extract/{job_id}` | `waitForCrawl`, `crawl`; `CrawlDataUse.from` | `data_used_mb`, `max_data_mb`, `include_resources`; `partial_reason` `data_limit` |
+
 ## Unreleased: crawl estimate and continue with options
 
 Against the crawl-estimate contract of 14 November 2026 (the backend is
@@ -12,7 +32,7 @@ built to it in parallel). The three new routes are listed in
 | `POST webgrph/crawl/estimate` | `webgrph().estimateCrawl` | body as `POST webgrph/crawl`; returns `CrawlEstimate`; not metered |
 | `POST webgrph/crawl-extract/estimate` | `webgrph().estimateCrawlExtract` | body as `POST webgrph/crawl-extract`; needs Kolektr |
 | `POST webgrph/crawl/{crawl_id}/continue` | `webgrph().continueCrawl(crawlId, CrawlContinueOptions)` | optional body `{max_pages?, max_depth?}`; none when no options; 422 `continue_cannot_lower`; 409 |
-| `POST webgrph/crawl-extract/{job_id}/continue` | `webgrph().continueCrawlExtract` | same body; may answer 501 until built |
+| `POST webgrph/crawl-extract/{job_id}/continue` | `webgrph().continueCrawlExtract` | same body; 202 `{success, job_id, crawl_id, status, limits, links, time_budget_s?, elapsed_s?, max_data_mb?}`; 409 `continue_needs_more_pages`, `continue_needs_more_data`, `not_continuable`, `already_continuing`; 422 `continue_cannot_lower` |
 | `GET webgrph/crawl/{crawl_id}` | `waitForCrawl`, `crawl` | `time_budget_s`, `elapsed_s`, `est_remaining_s` read into `CrawlResult` |
 | `GET webgrph/crawl-extract/{job_id}` | `getCrawlExtract` + `CrawlTiming.from` | the same three fields |
 

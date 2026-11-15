@@ -247,6 +247,92 @@ if (!e.willExhaustQuota()) {
 cap is known, for example when the site probe failed). `clamped()` is true
 when a requested limit was lowered to the plan's (`planLimits()`).
 
+**Extras are off by default.** A crawl or crawl-extract loads each page's
+content (the document, its scripts and data) and nothing else: images, video
+and audio, fonts, stylesheets and tracking are not loaded unless the job
+includes them. Include any of them per job with `includeResources` (the
+names are in `ResourceTypes`; `ResourceTypes.ALL` loads a page as a browser
+would). With capture mode `visual`, images and stylesheets are included
+automatically. The estimate takes `includeResources` and `captureMode` too
+and says what each extra would cost; its `includeResources()` is the
+effective set, and `includeResourcesLocked()` lists the extras that cannot be
+turned off (`images` and `stylesheets` for `visual`).
+
+Extras are off on every browser route, not only crawls: `evadr().fetch` and
+`kolektr().extract` take `includeResources` too (`FetchOptions`,
+`ExtractOptions`), and leaving it unset means none:
+
+```java
+client.evadr().fetch("https://example.com", FetchOptions.builder()
+        .forceBrowser(true).includeResources(ResourceTypes.IMAGES).build());
+client.kolektr().extract("https://example.com", ExtractOptions.builder()
+        .includeResources(ResourceTypes.STYLESHEETS).build());
+```
+
+The asynchronous fetch (`startFetchJob`, `fetchAsync`, `fetchStream`; `POST
+evadr/fetch/async`) sends `FetchOptions.includeResources` too, and
+`extractHtml(html, url, schema, itemSelector, includeResources)` takes it for
+`POST kolektr/extract/html`. Each is sent only when set.
+
+**Data use, the data limit and consent.** The estimate's `data()` gives the
+MB per page and for the job (typical and high, with the job's low too), the
+MB if every extra were loaded, the MB saved by leaving them out (in all and
+`savingByCategoryMb()` per extra) and `source()` (`site_profile`: measured
+pages of the site, `root_page`, or `typical`). `shareOfRemaining()` is the
+share of the remaining allowance (a fraction), `risks()` lists what may go
+wrong or cost more, and `suggestedMaxDataMb()` is a data limit to start with.
+`maxDataMb` stops the job when it has used that much: no new page is
+started, pages in flight finish, and it ends partial with `partialReason()`
+`data_limit` (`WebgrphNamespace.DATA_LIMIT`). Without `maxDataMb` a job has
+no data limit, as before. When `consentRequired()` is true, pass the
+estimate's id and the acknowledgement with `acknowledge(estimate)`. The API
+answers a dashboard session that starts such a job without them with 409
+`cost_acknowledgement_required` (`CostAcknowledgementRequiredException`).
+API keys are not refused: the SDK's caller decides, and `acknowledge` keeps
+a record of the estimate on the job.
+
+```java
+var estOptions = CrawlOptions.builder().maxPages(200)
+        .includeResources(ResourceTypes.IMAGES).buildAsSet();
+CrawlEstimate e = client.webgrph().estimateCrawl("https://example.com", estOptions);
+System.out.printf("%.1f-%.1f MB (%.0f%% of what remains); images add %.1f MB%n",
+        e.data().totalMb().typical(), e.data().totalMb().high(),
+        e.shareOfRemaining() == null ? 0 : e.shareOfRemaining().high() * 100,
+        e.data().savingByCategoryMb().getOrDefault("images", 0.0));
+e.risks().forEach(System.out::println);
+var builder = CrawlOptions.builder().maxPages(200).includeResources(ResourceTypes.IMAGES);
+if (e.suggestedMaxDataMb() != null) builder.maxDataMb(e.suggestedMaxDataMb());
+if (e.consentRequired()) builder.acknowledge(e);   // estimateId + costAcknowledged(true)
+var done = client.webgrph().crawl("https://example.com", builder.buildAsSet());
+System.out.println(done.dataUsedMb() + " of " + done.maxDataMb() + " MB");
+if (WebgrphNamespace.DATA_LIMIT.equals(done.partialReason())) {
+    client.webgrph().continueCrawl(done.crawlId(), CrawlContinueOptions.builder().maxDataMb(200).build());
+}
+```
+
+A crawl's status gives `dataUsedMb()`, `maxDataMb()` and
+`includeResources()` (`CrawlResult`; null when not reported); for a
+crawl-extract status map, `CrawlDataUse.from(client.webgrph().getCrawlExtract(jobId))`.
+
+**Map first, then choose.** `mapSite(url[, maxUrls])` (`POST webgrph/map`)
+lists the site's URLs from robots.txt, its sitemaps and the start page's
+links, without fetching other pages, as a tree by path (up to 3 levels,
+largest branch first). It is metered like a crawl. Crawl the branches you
+choose with `includePaths` (only links under those prefixes are followed;
+the start page is always fetched), or exact pages with `urls` (same site,
+capped at the page limit, links not followed). Both work for crawl-extract
+and are kept when the job is continued:
+
+```java
+SiteMap map = client.webgrph().mapSite("https://example.com", 5000);
+for (var b : map.branches()) System.out.println(b.path() + " " + b.urlCount());
+client.webgrph().crawl("https://example.com", CrawlOptions.builder()
+        .includePaths(List.of("/products/")).buildAsSet());
+// try one page first
+client.webgrph().crawlExtract("https://example.com", CrawlOptions.builder()
+        .urls(List.of("https://example.com/")).buildAsSet(), null);
+```
+
 Crawls run asynchronously. `crawl` starts one, waits for it and reads every
 page by cursor; `startCrawl` returns at once with the crawl ID and no status
 (`POST webgrph/crawl` does not answer with one: `status()` is null until a
@@ -308,15 +394,26 @@ An ID the API does not know is answered the same way (409, not 404).
 
 To continue with higher limits, pass `CrawlContinueOptions` (estimate the
 new limits first with `estimateCrawl`). A crawl that stopped at `max_pages`
-can be continued when a larger `maxPages` is given. Limits may only rise: a
+can be continued when a larger `maxPages` is given, and one that stopped at
+its data limit when a larger `maxDataMb` is given. Limits may only rise: a
 lower one is answered with 422 `continue_cannot_lower`. With no options no
 body is sent, exactly as `continueCrawl(crawlId)`. `continueCrawlExtract`
 does the same for a crawl-extract job:
 
 ```java
 client.webgrph().continueCrawl(done.crawlId(), CrawlContinueOptions.builder().maxPages(500).build());
-client.webgrph().continueCrawlExtract(jobId, CrawlContinueOptions.builder().maxPages(500).build());
+Map<String, Object> cont = client.webgrph().continueCrawlExtract(jobId,
+        CrawlContinueOptions.builder().maxPages(500).build());
+// 202: success, job_id, crawl_id, status, limits {max_pages, max_depth}, links,
+// and when known time_budget_s, elapsed_s, max_data_mb
+Double newLimit = CrawlDataUse.from(cont).maxDataMb();
 ```
+
+`continueCrawlExtract` throws `ApiException` with `getCode()`:
+`continue_needs_more_pages` (409; the crawl stopped at `max_pages`, give a
+larger `maxPages`), `continue_needs_more_data` (409; it stopped at its data
+limit, give a larger `maxDataMb`), `not_continuable` (409),
+`already_continuing` (409) or `continue_cannot_lower` (422).
 
 **Time used.** `CrawlResult.timeBudgetS()`, `elapsedS()` and
 `estRemainingS()` give the crawl's time against its budget (null until the
@@ -434,6 +531,29 @@ try (ExportDownload export = client.exportBatchJob(batchJobId, "csv")) {
 
 The batch export sends no `X-Job-Status` and no `X-Crawl-*` header:
 `jobStatus()` and `crawl()` are null for it.
+
+### A fetch's stored page
+
+A fetch's page is kept as an artifact. `getArtifact(id)` (`GET
+artifacts/{artifact_id}`) returns its metadata: `id`, `type`
+(`Artifact.FETCHED_CONTENT` or `Artifact.DEGRADED_FETCHED_CONTENT`), `url`,
+`createdAt`, `sizeBytes`, `contentType`, `finalUrl` (after redirects, or
+null), `statusCode` (or null), `verified` and `contentUrl`.
+`downloadArtifact(id)` (`GET artifacts/{artifact_id}/content`) returns its
+HTML as UTF-8 bytes; the API sends it as an attachment named
+`<host>-<id8>.html`. The HTML is the page as fetched: save it or read it,
+but do not open it as a live page.
+
+Both answer 404 `Artifact not found` (`ApiException`) for a session or
+cookie artifact, another organisation's artifact, an unknown id, or one with
+no HTML; 403 (`ForbiddenException`) for the wrong organisation; and 422
+(`ApiException`) for an id that is not a UUID.
+
+```java
+Artifact a = client.getArtifact(artifactId);
+byte[] html = client.downloadArtifact(artifactId);
+Files.write(Path.of(a.id() + ".html"), html);
+```
 
 ### Batch jobs
 
@@ -629,6 +749,9 @@ try {
     // 409 concurrent_limit — all the organisation's work slots are in use (not retried)
     System.out.println(e.getTier() + " runs " + e.getConcurrentLimit() + " at once: "
             + e.getActiveCrawls() + " crawl(s)/batch(es), " + e.getActiveRequests() + " other call(s)");
+} catch (CostAcknowledgementRequiredException e) {
+    // 409 cost_acknowledgement_required — a dashboard session started a job whose estimate
+    // requires consent; estimate again and start with CrawlOptions.builder().acknowledge(estimate)
 } catch (BillingUnavailableException e) {
     // 503 billing_unavailable — usage could not be checked; retry later
 } catch (JobFailedException e) {

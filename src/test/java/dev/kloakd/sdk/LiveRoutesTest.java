@@ -152,8 +152,10 @@ class LiveRoutesTest {
         var prefix = "/api/v1/organizations/{organization_id}/";
         // routes.tsv is generated from a kobe-scraper checkout; the second file lists the
         // routes of the crawl-estimate contract (14 Nov 2026), built in parallel and not
-        // yet in a checkout the list was generated from.
-        for (String resource : List.of("/routes.tsv", "/routes-contract-2026-11-14.tsv")) {
+        // yet in a checkout the list was generated from. The third lists the routes of the
+        // cost-control contract (15 Nov 2026), also built in parallel.
+        for (String resource : List.of("/routes.tsv", "/routes-contract-2026-11-14.tsv",
+                "/routes-contract-2026-11-15.tsv")) {
             try (var in = getClass().getResourceAsStream(resource)) {
                 for (String line : new String(in.readAllBytes()).split("\n")) {
                     var parts = line.split("\t", 2);

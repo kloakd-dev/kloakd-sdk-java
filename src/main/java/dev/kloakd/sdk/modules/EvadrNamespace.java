@@ -45,6 +45,9 @@ public final class EvadrNamespace {
      * {@code poll_url} ({@code evadr/jobs/{id}}), first after {@code pollInterval}
      * and then with growing waits, up to {@code pollTimeout}, and returns the
      * job's result. ({@code webhookUrl} is not used: it applies to async jobs.)
+     * Page extras (images, video and audio, fonts, stylesheets, tracking) are
+     * off by default on every browser route: {@code includeResources} unset
+     * means none, and is then not sent.
      *
      * @throws dev.kloakd.sdk.errors.JobFailedException  the job failed or expired
      * @throws dev.kloakd.sdk.errors.JobTimeoutException still running after {@code pollTimeout}
@@ -64,6 +67,7 @@ public final class EvadrNamespace {
         if (o.forceBrowser()) body.put("force_browser", true);
         if (o.useProxy()) body.put("use_proxy", true);
         if (o.sessionArtifactId() != null) body.put("session_artifact_id", o.sessionArtifactId());
+        if (o.includeResources() != null) body.put("include_resources", o.includeResources());
         return body;
     }
 
@@ -76,7 +80,10 @@ public final class EvadrNamespace {
         return parseFetchResult(t.followHandOff(jobId, "evadr/jobs/" + seg(jobId), pollInterval, pollTimeout));
     }
 
-    /** Start an asynchronous fetch ({@code POST evadr/fetch/async}) and return its job ID. */
+    /**
+     * Start an asynchronous fetch ({@code POST evadr/fetch/async}) and return its job ID.
+     * Page extras are off by default: {@code includeResources} unset means none, and is then not sent.
+     */
     public String startFetchJob(String url, FetchOptions opts) {
         var body = fetchBody(url, opts);
         if (opts.webhookUrl() != null) body.put("webhook_url", opts.webhookUrl());
