@@ -22,6 +22,12 @@ public final class WebgrphNamespace {
     public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMinutes(60);
     /** The status of a crawl paused because the organisation's quota ran out. */
     public static final String HELD_QUOTA = "held_quota";
+    /**
+     * The {@code partial_reason} of a job that reached its {@code max_data_mb}: it
+     * started no new page, finished those in flight and ended partial. Continue
+     * it with a higher {@link CrawlContinueOptions#maxDataMb()}.
+     */
+    public static final String DATA_LIMIT = "data_limit";
 
     private final HttpTransport t;
 
@@ -44,6 +50,12 @@ public final class WebgrphNamespace {
      * Start a site crawl ({@code POST webgrph/crawl}) with these options:
      * limits of 0 are not sent; {@code scope}, {@code budget} and
      * {@code captureMode} are sent when set. ({@code extractSchema} is not used here.)
+     * The cost-control options ({@code includeResources}, {@code maxDataMb},
+     * {@code estimateId}, {@code costAcknowledged}, {@code urls},
+     * {@code includePaths}) are sent when set ({@code costAcknowledged} only when true).
+     *
+     * @throws dev.kloakd.sdk.errors.CostAcknowledgementRequiredException 409: a dashboard session
+     *         started a job whose estimate requires consent without acknowledging it
      */
     public CrawlResult startCrawl(String url, CrawlOptions o) {
         var m = t.post("webgrph/crawl", crawlBody(url, o));
@@ -54,6 +66,18 @@ public final class WebgrphNamespace {
     }
 
     private static HashMap<String, Object> crawlBody(String url, CrawlOptions o) {
+        var body = estimateBody(url, o);
+        // cost-control contract of 15 Nov 2026: sent only when set
+        if (o.maxDataMb() != null) body.put("max_data_mb", o.maxDataMb());
+        if (o.estimateId() != null) body.put("estimate_id", o.estimateId());
+        if (o.costAcknowledged()) body.put("cost_acknowledged", true);
+        if (o.urls() != null) body.put("urls", o.urls());
+        if (o.includePaths() != null) body.put("include_paths", o.includePaths());
+        return body;
+    }
+
+    /** The job body without the fields an estimate does not take (only {@code include_resources} of the new ones). */
+    private static HashMap<String, Object> estimateBody(String url, CrawlOptions o) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (o.maxDepth() > 0) body.put("max_depth", o.maxDepth());
@@ -63,6 +87,7 @@ public final class WebgrphNamespace {
         if (o.scope() != null) body.put("scope", o.scope());
         if (o.budget() != null) body.put("budget", o.budget());
         if (o.captureMode() != null) body.put("capture_mode", o.captureMode());
+        if (o.includeResources() != null) body.put("include_resources", o.includeResources());
         return body;
     }
 
@@ -180,7 +205,9 @@ public final class WebgrphNamespace {
                 optBool(status, "is_partial"), str(status, "partial_reason"), optBool(status, "resumable"),
                 optInt(status, "pages_discovered"), optInt(status, "pages_fetched"),
                 optInt(status, "pages_unfetched"), str(status, "error_code"), str(status, "message"), held,
-                optInt(status, "time_budget_s"), optDbl(status, "elapsed_s"), optDbl(status, "est_remaining_s"));
+                optInt(status, "time_budget_s"), optDbl(status, "elapsed_s"), optDbl(status, "est_remaining_s"),
+                optDbl(status, "data_used_mb"), optDbl(status, "max_data_mb"),
+                CrawlDataUse.from(status).includeResources());
     }
 
     private static Double optDbl(Map<String, Object> m, String key) {
@@ -204,11 +231,12 @@ public final class WebgrphNamespace {
     /**
      * {@link #continueCrawl(String)} with new limits
      * ({@code POST webgrph/crawl/{crawl_id}/continue} with
-     * {@code {"max_pages"?, "max_depth"?}}). With null or empty options no
+     * {@code {"max_pages"?, "max_depth"?, "max_data_mb"?}}). With null or empty options no
      * body is sent and the call is exactly {@link #continueCrawl(String)}.
      * The API clamps the new limits to the plan and only lets them rise. A
      * crawl that stopped at {@code max_pages} can be continued when a larger
-     * {@code maxPages} is given. Check the cost first with
+     * {@code maxPages} is given, and one that stopped at its data limit
+     * ({@link #DATA_LIMIT}) when a larger {@code maxDataMb} is given. Check the cost first with
      * {@link #estimateCrawl(String, CrawlOptions)}.
      *
      * @throws dev.kloakd.sdk.errors.ApiException 422 {@code continue_cannot_lower}: a limit is lower
@@ -241,10 +269,45 @@ public final class WebgrphNamespace {
      * options to start it. Not metered: it uses no quota and no work slot.
      * A crawl maps the site's pages and links; crawl-extract also returns
      * the items on each page as rows.
+     *
+     * <p>Of the cost-control options only {@code includeResources} is sent:
+     * the estimate's {@code data()} gives the MB per page and for the job
+     * (typical and high), what loading every extra would add and what leaving
+     * each out saves; {@code shareOfRemaining()}, {@code risks()},
+     * {@code suggestedMaxDataMb()} and {@code estimateId()} come with it. When
+     * {@code consentRequired()} is true, start the job with
+     * {@code CrawlOptions.builder().acknowledge(estimate)} (a dashboard session
+     * is refused 409 {@code cost_acknowledgement_required} without it; API keys
+     * are not refused).
      */
     public CrawlEstimate estimateCrawl(String url, CrawlOptions options) {
-        var body = crawlBody(url, options != null ? options : CrawlOptions.builder().buildAsSet());
+        var body = estimateBody(url, options != null ? options : CrawlOptions.builder().buildAsSet());
         return CrawlEstimate.from(t.post("webgrph/crawl/estimate", body));
+    }
+
+    // ── Map first ────────────────────────────────────────────────────────────
+
+    /** {@link #mapSite(String, Integer)} with the API's default {@code max_urls}. */
+    public SiteMap mapSite(String url) {
+        return mapSite(url, null);
+    }
+
+    /**
+     * The site's pages as a tree by path, before choosing what to crawl
+     * ({@code POST webgrph/map}, body {@code {"url", "max_urls"?}}; cost-control
+     * contract of 15 Nov 2026, section 5). It reads robots.txt, the sitemaps
+     * and the start page's links through an exit and fetches no other page.
+     * Metered like a crawl and needs the same entitlement. Then crawl the
+     * chosen branches with {@code CrawlOptions.includePaths} or single pages
+     * with {@code CrawlOptions.urls}.
+     *
+     * @param maxUrls the most URLs to list, or null for the API's default
+     */
+    public SiteMap mapSite(String url, Integer maxUrls) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        if (maxUrls != null) body.put("max_urls", maxUrls);
+        return SiteMap.from(t.post("webgrph/map", body));
     }
 
     /**
@@ -341,11 +404,15 @@ public final class WebgrphNamespace {
      *
      * @param options the crawl's limits, scope, budget, capture mode and session, as for
      *                {@link #startCrawl(String, CrawlOptions)} (limits of 0 are not sent;
-     *                {@code extractSchema} is not used here), or null
+     *                {@code extractSchema} is not used here), or null; the cost-control
+     *                options ({@code includeResources}, {@code maxDataMb}, {@code estimateId},
+     *                {@code costAcknowledged}, {@code urls}, {@code includePaths}) are sent when set
      * @param extract what to extract, in the API's own fields: {@code entity_type},
      *                {@code fields} (a list of names) or {@code schema}
      *                ({@code item_selector} and {@code fields} of
      *                {@code {name, selector, attribute, type}}); null lets the API choose
+     * @throws dev.kloakd.sdk.errors.CostAcknowledgementRequiredException 409: a dashboard session
+     *         started a job whose estimate requires consent without acknowledging it
      */
     public Map<String, Object> startCrawlExtract(String url, CrawlOptions options, Map<String, Object> extract) {
         var body = crawlBody(url, options != null ? options : CrawlOptions.builder().buildAsSet());
@@ -367,7 +434,7 @@ public final class WebgrphNamespace {
      * must include Kolektr. Not metered.
      */
     public CrawlEstimate estimateCrawlExtract(String url, CrawlOptions options, Map<String, Object> extract) {
-        var body = crawlBody(url, options != null ? options : CrawlOptions.builder().buildAsSet());
+        var body = estimateBody(url, options != null ? options : CrawlOptions.builder().buildAsSet());
         if (extract != null) body.put("extract", extract);
         return CrawlEstimate.from(t.post("webgrph/crawl-extract/estimate", body));
     }
@@ -381,7 +448,7 @@ public final class WebgrphNamespace {
      * Go on with a crawl-extract job whose crawl stopped early
      * ({@code POST webgrph/crawl-extract/{job_id}/continue}): the crawl goes
      * on, then the new pages are extracted. With null or empty options no
-     * body is sent; otherwise {@code {"max_pages"?, "max_depth"?}}, clamped
+     * body is sent; otherwise {@code {"max_pages"?, "max_depth"?, "max_data_mb"?}}, clamped
      * to the plan and only allowed to rise. Wait for the job again with
      * {@link #waitForCrawlExtract(String)}.
      *
@@ -402,7 +469,10 @@ public final class WebgrphNamespace {
      * pages_discovered, pages_fetched, pages_unfetched, cancelled, root_unfetched,
      * error, error_code}), or null before there is one. {@code time_budget_s},
      * {@code elapsed_s} and {@code est_remaining_s} are null until the crawl
-     * reports them; {@link CrawlTiming#from(Map)} reads them. The job itself is never
+     * reports them; {@link CrawlTiming#from(Map)} reads them. {@code data_used_mb},
+     * {@code max_data_mb} and {@code include_resources} give the data used against the
+     * job's limit; {@link CrawlDataUse#from(Map)} reads them. A job stopped at its
+     * limit has {@code partial_reason} {@link #DATA_LIMIT}. The job itself is never
      * {@code held_quota}; its crawl can be ({@link #isCrawlExtractHeld}).
      */
     public Map<String, Object> getCrawlExtract(String jobId) {

@@ -1,5 +1,23 @@
 # Routes called by the Java SDK
 
+## Unreleased: cost control
+
+Against the cost-control contract of 15 November 2026
+(`COST-CONTROL-CONTRACT.md`, sections 1–5 and 8; the backend is built to it
+in parallel). The three new routes are listed in
+`src/test/resources/routes-contract-2026-11-15.tsv`, not in the generated
+`routes.tsv`.
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST webgrph/map` | `webgrph().mapSite` | body `{url, max_urls?}`; returns `SiteMap`; metered like a crawl |
+| `GET artifacts/{artifact_id}` | `getArtifact` | returns `Artifact`; 404 for anything but your fetched pages |
+| `GET artifacts/{artifact_id}/content` | `downloadArtifact` | the page's bytes (an attachment) |
+| `POST webgrph/crawl`, `POST webgrph/crawl-extract` | `startCrawl`, `crawl`, `startCrawlExtract`, `crawlExtract` | also `include_resources?`, `max_data_mb?`, `estimate_id?`, `cost_acknowledged?` (only when true), `urls?`, `include_paths?`; 409 `cost_acknowledgement_required` |
+| `POST webgrph/crawl/estimate`, `POST webgrph/crawl-extract/estimate` | `estimateCrawl`, `estimateCrawlExtract` | also `include_resources?`; answer adds `include_resources`, `data`, `share_of_remaining`, `consent_required`, `risks`, `suggested_max_data_mb`, `estimate_id` |
+| `POST webgrph/crawl/{crawl_id}/continue`, `POST webgrph/crawl-extract/{job_id}/continue` | `continueCrawl`, `continueCrawlExtract` | body also `max_data_mb?` |
+| `GET webgrph/crawl/{crawl_id}`, `GET webgrph/crawl-extract/{job_id}` | `waitForCrawl`, `crawl`; `CrawlDataUse.from` | `data_used_mb`, `max_data_mb`, `include_resources`; `partial_reason` `data_limit` |
+
 ## Unreleased: crawl estimate and continue with options
 
 Against the crawl-estimate contract of 14 November 2026 (the backend is

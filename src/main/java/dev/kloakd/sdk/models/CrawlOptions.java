@@ -1,5 +1,6 @@
 package dev.kloakd.sdk.models;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,6 +18,17 @@ import java.util.Map;
  * @param scope a CrawlScope ({@code same_host}, {@code allowed_domains}, {@code exclude_patterns}, ...), or null
  * @param budget a CrawlBudget ({@code max_resources}, {@code max_total_bytes}, ...), or null
  * @param captureMode {@code structure}, {@code content} or {@code visual}, or null
+ * @param includeResources the page extras to load ({@code include_resources}; {@link ResourceTypes}):
+ *                         {@code images}, {@code media}, {@code fonts}, {@code stylesheets},
+ *                         {@code tracking}. They are off by default; null is not sent
+ * @param maxDataMb stop the job when it has used this many MB of data ({@code max_data_mb}); it then
+ *                  ends partial with {@code partial_reason} {@code data_limit}. Null: no per-job limit
+ * @param estimateId the {@code estimateId} of the estimate the user saw ({@code estimate_id}), or null
+ * @param costAcknowledged the user accepted that estimate's cost ({@code cost_acknowledged}); sent only when true
+ * @param urls fetch exactly these pages (same registrable domain as the URL; capped at max pages;
+ *             links are not followed), for example chosen from {@code webgrph().mapSite}; null is not sent
+ * @param includePaths follow only links under these path prefixes (the start page is always fetched),
+ *                     for example branches of {@code webgrph().mapSite}; null is not sent
  */
 public record CrawlOptions(
         int maxDepth,
@@ -26,8 +38,21 @@ public record CrawlOptions(
         String sessionArtifactId,
         Map<String, Object> scope,
         Map<String, Object> budget,
-        String captureMode
+        String captureMode,
+        List<String> includeResources,
+        Double maxDataMb,
+        String estimateId,
+        boolean costAcknowledged,
+        List<String> urls,
+        List<String> includePaths
 ) {
+    /** The 0.7.0 components only (none of the cost-control fields). */
+    public CrawlOptions(int maxDepth, int maxPages, Map<String, ?> extractSchema, boolean includeExternalLinks,
+            String sessionArtifactId, Map<String, Object> scope, Map<String, Object> budget, String captureMode) {
+        this(maxDepth, maxPages, extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode,
+                null, null, null, false, null, null);
+    }
+
     public static Builder builder() { return new Builder(); }
 
     public static final class Builder {
@@ -39,6 +64,12 @@ public record CrawlOptions(
         private Map<String, Object> scope;
         private Map<String, Object> budget;
         private String captureMode;
+        private List<String> includeResources;
+        private Double maxDataMb;
+        private String estimateId;
+        private boolean costAcknowledged;
+        private List<String> urls;
+        private List<String> includePaths;
 
         private Builder() {}
 
@@ -50,17 +81,34 @@ public record CrawlOptions(
         public Builder scope(Map<String, Object> scope) { this.scope = scope; return this; }
         public Builder budget(Map<String, Object> budget) { this.budget = budget; return this; }
         public Builder captureMode(String captureMode) { this.captureMode = captureMode; return this; }
+        /** The page extras to load ({@link ResourceTypes}); an empty list sends {@code []} (none, the default). */
+        public Builder includeResources(List<String> includeResources) { this.includeResources = includeResources == null ? null : List.copyOf(includeResources); return this; }
+        /** The page extras to load ({@link ResourceTypes}). */
+        public Builder includeResources(String... includeResources) { return includeResources(List.of(includeResources)); }
+        public Builder maxDataMb(double maxDataMb) { this.maxDataMb = maxDataMb; return this; }
+        public Builder estimateId(String estimateId) { this.estimateId = estimateId; return this; }
+        public Builder costAcknowledged(boolean costAcknowledged) { this.costAcknowledged = costAcknowledged; return this; }
+        /** {@link #estimateId(String)} and {@link #costAcknowledged(boolean) costAcknowledged(true)}. */
+        public Builder acknowledge(CrawlEstimate estimate) {
+            this.estimateId = estimate.estimateId();
+            this.costAcknowledged = true;
+            return this;
+        }
+        public Builder urls(List<String> urls) { this.urls = urls == null ? null : List.copyOf(urls); return this; }
+        public Builder includePaths(List<String> includePaths) { this.includePaths = includePaths == null ? null : List.copyOf(includePaths); return this; }
 
         /** Options with the orchestrator's defaults (depth 3, 100 pages) for unset limits. */
         public CrawlOptions build() {
             return new CrawlOptions(maxDepth > 0 ? maxDepth : 3, maxPages > 0 ? maxPages : 100,
-                    extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode);
+                    extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode,
+                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths);
         }
 
         /** Options as set: unset limits stay 0 and are not sent, so the API applies the tier's defaults. */
         public CrawlOptions buildAsSet() {
             return new CrawlOptions(maxDepth, maxPages, extractSchema, includeExternalLinks,
-                    sessionArtifactId, scope, budget, captureMode);
+                    sessionArtifactId, scope, budget, captureMode,
+                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths);
         }
     }
 }

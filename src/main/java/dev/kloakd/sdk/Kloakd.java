@@ -99,6 +99,31 @@ public final class Kloakd {
         return transport.followHandOff(jobId, "handoff/" + HttpTransport.seg(jobId), pollInterval, pollTimeout);
     }
 
+    // ── Artifacts (a fetch's stored page) ───────────────────────────────────
+
+    /**
+     * A stored page's metadata ({@code GET artifacts/{artifact_id}}; cost-control
+     * contract of 15 Nov 2026, section 8). Only fetched-content artifacts of your
+     * organisation are served.
+     *
+     * @throws dev.kloakd.sdk.errors.ApiException 404: no such fetched page of yours (session and
+     *         cookie artifacts are never served)
+     */
+    public Artifact getArtifact(String artifactId) {
+        return Artifact.from(transport.get("artifacts/" + HttpTransport.seg(artifactId), null));
+    }
+
+    /**
+     * A stored page's HTML as it was fetched ({@code GET artifacts/{artifact_id}/content},
+     * sent as a download). The bytes are the page's own: it is not run or
+     * sanitised, so do not open it as a live page in a browser.
+     *
+     * @throws dev.kloakd.sdk.errors.ApiException 404: no such fetched page of yours
+     */
+    public byte[] downloadArtifact(String artifactId) {
+        return transport.requestBytes("GET", "artifacts/" + HttpTransport.seg(artifactId) + "/content", null, null);
+    }
+
     // ── Batch export ────────────────────────────────────────────────────────
 
     /**

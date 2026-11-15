@@ -34,6 +34,43 @@ Written against the crawl-estimate API contract of 14 November 2026
   the three routes of the contract that are not yet in the generated
   `routes.tsv`.
 
+### Cost control (contract of 15 November 2026)
+
+Written against the cost-control contract of 15 November 2026 (sections 1–5
+and 8); the backend is being built to it in parallel.
+
+#### Added
+- `CrawlOptions` gains `includeResources`, `maxDataMb`, `estimateId`,
+  `costAcknowledged`, `urls` and `includePaths` (builder methods, and
+  `acknowledge(estimate)` for the estimate's id with `costAcknowledged(true)`).
+  `startCrawl`, `crawl`, `startCrawlExtract` and `crawlExtract` send each one
+  when set (`cost_acknowledged` only when true). The estimates send only
+  `include_resources` of these.
+- `ResourceTypes`: the five page extras (`images`, `media`, `fonts`,
+  `stylesheets`, `tracking`), off by default, and `ALL`.
+- `CrawlContinueOptions.maxDataMb` (`max_data_mb` on both continue routes).
+- `CrawlEstimate` gains `includeResources`, `data` (`DataUse`: `source`,
+  `perPageMb`, `totalMb`, `totalMbAllResources`, `savingMb` as `DataRange`
+  `{low?, typical, high}`, `byCategoryMbPerPage`, `savingByCategoryMb`),
+  `shareOfRemaining`, `consentRequired`, `risks`, `suggestedMaxDataMb` and
+  `estimateId`. Null (or false, or an empty `risks`) from an API without them.
+- `CrawlResult` gains `dataUsedMb`, `maxDataMb` and `includeResources`;
+  `CrawlDataUse.from(status)` reads them from a crawl-extract status map.
+  `WebgrphNamespace.DATA_LIMIT` is the new `partial_reason` `data_limit`.
+- `webgrph().mapSite(url[, maxUrls])` (`POST webgrph/map`) returns a
+  `SiteMap` with its `branches` tree (`SiteMap.Branch`).
+- `client.getArtifact(id)` (`GET artifacts/{artifact_id}`, `Artifact`) and
+  `client.downloadArtifact(id)` (`GET artifacts/{artifact_id}/content`, the
+  page's bytes).
+- `CostAcknowledgementRequiredException` (an `ApiException`) for 409
+  `cost_acknowledgement_required`.
+
+#### Changed
+- `CrawlOptions`, `CrawlContinueOptions`, `CrawlEstimate` and `CrawlResult`
+  have new record components; their previous canonical constructors are kept.
+- `LiveRoutesTest` also reads `src/test/resources/routes-contract-2026-11-15.tsv`
+  (the three new routes).
+
 ## [0.7.0] — 2026-11-12
 
 Checked against kobe-scraper main 6bd19e9b; the batch and unified scrape
