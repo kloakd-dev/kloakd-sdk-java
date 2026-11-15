@@ -45,12 +45,16 @@ public final class EvadrNamespace {
      * {@code poll_url} ({@code evadr/jobs/{id}}), first after {@code pollInterval}
      * and then with growing waits, up to {@code pollTimeout}, and returns the
      * job's result. ({@code webhookUrl} is not used: it applies to async jobs.)
+     * Page extras (images, video and audio, fonts, stylesheets, tracking) are
+     * off by default on every browser route: {@code includeResources} unset
+     * means none, and is then not sent.
      *
      * @throws dev.kloakd.sdk.errors.JobFailedException  the job failed or expired
      * @throws dev.kloakd.sdk.errors.JobTimeoutException still running after {@code pollTimeout}
      */
     public FetchResult fetch(String url, FetchOptions opts) {
         var body = fetchBody(url, opts);
+        if (opts.includeResources() != null) body.put("include_resources", opts.includeResources());
         return parseFetchResult(t.postFollowing("evadr/fetch", body, interval(opts), limit(opts)));
     }
 

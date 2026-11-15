@@ -20,7 +20,9 @@ import java.util.Map;
  * @param captureMode {@code structure}, {@code content} or {@code visual}, or null
  * @param includeResources the page extras to load ({@code include_resources}; {@link ResourceTypes}):
  *                         {@code images}, {@code media}, {@code fonts}, {@code stylesheets},
- *                         {@code tracking}. They are off by default; null is not sent
+ *                         {@code tracking}. Page extras are off by default on every browser route;
+ *                         null (unset) means none and is not sent. With {@code captureMode}
+ *                         {@code visual}, images and stylesheets are included automatically
  * @param maxDataMb stop the job when it has used this many MB of data ({@code max_data_mb}); it then
  *                  ends partial with {@code partial_reason} {@code data_limit}. Null: no per-job limit
  * @param estimateId the {@code estimateId} of the estimate the user saw ({@code estimate_id}), or null

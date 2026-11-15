@@ -14,6 +14,8 @@ in parallel). The three new routes are listed in
 | `GET artifacts/{artifact_id}` | `getArtifact` | returns `Artifact` (`final_url`, `status_code`, `verified`, `content_url` too); 404 `Artifact not found` for anything but your fetched pages; 403 wrong organisation; 422 id not a UUID |
 | `GET artifacts/{artifact_id}/content` | `downloadArtifact` | the page's HTML bytes (`text/html; charset=utf-8`, attachment `<host>-<id8>.html`); same errors |
 | `POST webgrph/crawl`, `POST webgrph/crawl-extract` | `startCrawl`, `crawl`, `startCrawlExtract`, `crawlExtract` | also `include_resources?`, `max_data_mb?`, `estimate_id?`, `cost_acknowledged?` (only when true), `urls?`, `include_paths?`; 409 `cost_acknowledgement_required` |
+| `POST evadr/fetch` | `evadr().fetch` | also `include_resources?` (`FetchOptions`); not on `POST evadr/fetch/async` |
+| `POST kolektr/extract` | `kolektr().extract` | also `include_resources?` (`ExtractOptions`); not on `kolektr/extract/html` (no page is loaded) |
 | `POST webgrph/crawl/estimate`, `POST webgrph/crawl-extract/estimate` | `estimateCrawl`, `estimateCrawlExtract` | also `include_resources?`; answer adds `include_resources`, `data`, `share_of_remaining`, `consent_required`, `risks`, `suggested_max_data_mb`, `estimate_id` |
 | `POST webgrph/crawl/{crawl_id}/continue`, `POST webgrph/crawl-extract/{job_id}/continue` | `continueCrawl`, `continueCrawlExtract` | body also `max_data_mb?` |
 | `GET webgrph/crawl/{crawl_id}`, `GET webgrph/crawl-extract/{job_id}` | `waitForCrawl`, `crawl`; `CrawlDataUse.from` | `data_used_mb`, `max_data_mb`, `include_resources`; `partial_reason` `data_limit` |

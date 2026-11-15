@@ -252,8 +252,24 @@ content (the document, its scripts and data) and nothing else: images, video
 and audio, fonts, stylesheets and tracking are not loaded unless the job
 includes them. Include any of them per job with `includeResources` (the
 names are in `ResourceTypes`; `ResourceTypes.ALL` loads a page as a browser
-would). The estimate takes `includeResources` too and says what each extra
-would cost.
+would). With capture mode `visual`, images and stylesheets are included
+automatically. The estimate takes `includeResources` too and says what each
+extra would cost.
+
+Extras are off on every browser route, not only crawls: `evadr().fetch` and
+`kolektr().extract` take `includeResources` too (`FetchOptions`,
+`ExtractOptions`), and leaving it unset means none:
+
+```java
+client.evadr().fetch("https://example.com", FetchOptions.builder()
+        .forceBrowser(true).includeResources(ResourceTypes.IMAGES).build());
+client.kolektr().extract("https://example.com", ExtractOptions.builder()
+        .includeResources(ResourceTypes.STYLESHEETS).build());
+```
+
+Only `fetch` sends it of the Evadr calls; `startFetchJob`, `fetchAsync` and
+`fetchStream` (`POST evadr/fetch/async`) do not. `extractHtml` takes HTML you
+already have and loads no page, so it has no extras.
 
 **Data use, the data limit and consent.** The estimate's `data()` gives the
 MB per page and for the job (typical and high, with the job's low too), the

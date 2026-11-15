@@ -47,7 +47,14 @@ and 8); the backend is being built to it in parallel.
   when set (`cost_acknowledged` only when true). The estimates send only
   `include_resources` of these.
 - `ResourceTypes`: the five page extras (`images`, `media`, `fonts`,
-  `stylesheets`, `tracking`), off by default, and `ALL`.
+  `stylesheets`, `tracking`), off by default on every browser route, and
+  `ALL`. With capture mode `visual` a crawl includes images and stylesheets
+  automatically.
+- `FetchOptions.includeResources` (sent as `include_resources` by
+  `evadr().fetch`, `POST evadr/fetch`, only when set; not by the async fetch)
+  and `ExtractOptions.includeResources` (sent by `kolektr().extract`, `POST
+  kolektr/extract`, only when set). Their previous constructors are kept, and
+  calls without it send exactly what they sent before.
 - `CrawlContinueOptions.maxDataMb` (`max_data_mb` on both continue routes).
 - `CrawlEstimate` gains `includeResources`, `data` (`DataUse`: `source`,
   `perPageMb`, `totalMb`, `totalMbAllResources`, `savingMb` as `DataRange`

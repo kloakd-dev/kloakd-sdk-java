@@ -48,6 +48,9 @@ public final class KolektrNamespace {
      * the client's poll settings ({@link dev.kloakd.sdk.Kloakd.Builder#pollInterval});
      * a failed or expired job throws {@link dev.kloakd.sdk.errors.JobFailedException},
      * one still running at the poll timeout {@link dev.kloakd.sdk.errors.JobTimeoutException}.
+     * Page extras (images, video and audio, fonts, stylesheets, tracking) are
+     * off by default on every browser route: {@link ExtractOptions#includeResources()}
+     * unset means none, and is then not sent.
      */
     public ExtractionResult extract(String url, ExtractOptions o) {
         var body = new HashMap<String, Object>();
@@ -60,6 +63,7 @@ public final class KolektrNamespace {
         if (o.sessionArtifactId() != null) body.put("session_artifact_id", o.sessionArtifactId());
         if (o.apiMapArtifactId() != null) body.put("api_map_artifact_id", o.apiMapArtifactId());
         if (o.pipelineId() != null) body.put("pipeline_id", o.pipelineId());
+        if (o.includeResources() != null) body.put("include_resources", o.includeResources());
         return parseExtractionResult(t.postFollowing("kolektr/extract", body));
     }
 

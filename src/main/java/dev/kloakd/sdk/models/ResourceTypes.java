@@ -7,7 +7,10 @@ import java.util.List;
  * ({@code include_resources}; cost-control contract of 15 Nov 2026). They are
  * off by default: a page loads only its content (the document, scripts and
  * data), never these, unless the job includes them. The estimate's
- * {@code data().savingByCategoryMb()} shows what each would add.
+ * {@code data().savingByCategoryMb()} shows what each would add. This holds
+ * on every browser route: crawl, crawl-extract, {@code evadr().fetch} and
+ * {@code kolektr().extract}. A crawl or crawl-extract with capture mode
+ * {@code visual} includes images and stylesheets automatically.
  */
 public final class ResourceTypes {
     /** Images (img, srcset, picture). */

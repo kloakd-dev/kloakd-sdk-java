@@ -132,6 +132,85 @@ class CostControlTest {
         assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST webgrph/crawl/estimate"));
     }
 
+    // ── extras on fetch and extract ──────────────────────────────────────────
+
+    private static final Map<String, Object> FETCHED = Map.of("success", true, "url", "https://example.com/",
+            "status_code", 200, "tier_used", 2, "html", "<html></html>");
+
+    @Test
+    void evadrFetch_sendsIncludeResourcesWhenSet() {
+        routes.json("POST evadr/fetch", 200, FETCHED);
+
+        client.evadr().fetch("https://example.com/", FetchOptions.builder().forceBrowser(true)
+                .includeResources(ResourceTypes.IMAGES, ResourceTypes.MEDIA).build());
+
+        assertEquals(Map.of("url", "https://example.com/", "force_browser", true,
+                "include_resources", List.of("images", "media")), routes.bodies.get("POST evadr/fetch"));
+    }
+
+    @Test
+    void evadrFetch_oldCallsSendNoIncludeResources() {
+        routes.json("POST evadr/fetch", 200, FETCHED);
+
+        client.evadr().fetch("https://example.com/");
+        assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST evadr/fetch"));
+        client.evadr().fetch("https://example.com/", true, true, "s1");
+        assertEquals(Map.of("url", "https://example.com/", "force_browser", true, "use_proxy", true,
+                "session_artifact_id", "s1"), routes.bodies.get("POST evadr/fetch"));
+        client.evadr().fetch("https://example.com/", new FetchOptions(false, false, null, null, null, null));
+        assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST evadr/fetch"));
+    }
+
+    @Test
+    void evadrFetchAsync_doesNotSendIncludeResources() {
+        routes.json("POST evadr/fetch/async", 202, Map.of("job_id", "j1"));
+
+        client.evadr().startFetchJob("https://example.com/",
+                FetchOptions.builder().includeResources(ResourceTypes.ALL).build());
+
+        assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST evadr/fetch/async"));
+    }
+
+    @Test
+    void kolektrExtract_sendsIncludeResourcesWhenSet() {
+        routes.json("POST kolektr/extract", 200, Map.of("success", true, "url", "https://example.com/"));
+
+        client.kolektr().extract("https://example.com/",
+                ExtractOptions.builder().includeResources(List.of("stylesheets")).build());
+
+        assertEquals(Map.of("url", "https://example.com/", "include_resources", List.of("stylesheets")),
+                routes.bodies.get("POST kolektr/extract"));
+    }
+
+    @Test
+    void kolektrExtract_oldCallsSendNoIncludeResources() {
+        routes.json("POST kolektr/extract", 200, Map.of("success", true, "url", "https://example.com/"));
+
+        client.kolektr().extract("https://example.com/");
+        assertEquals(Map.of("url", "https://example.com/"), routes.bodies.get("POST kolektr/extract"));
+        client.kolektr().extract("https://example.com/", null, "f1", null, null);
+        assertEquals(Map.of("url", "https://example.com/", "fetch_artifact_id", "f1"),
+                routes.bodies.get("POST kolektr/extract"));
+        client.kolektr().extract("https://example.com/",
+                new ExtractOptions(null, "level1", null, null, null, null, null, null));
+        assertEquals(Map.of("url", "https://example.com/", "level", "level1"), routes.bodies.get("POST kolektr/extract"));
+        client.kolektr().extract("https://example.com/",
+                new ExtractOptions(null, null, null, null, null, null, "p1"));
+        assertEquals(Map.of("url", "https://example.com/", "pipeline_id", "p1"), routes.bodies.get("POST kolektr/extract"));
+    }
+
+    @Test
+    void includeResources_emptyListIsSentAsNone() {
+        routes.json("POST evadr/fetch", 200, FETCHED);
+        routes.json("POST kolektr/extract", 200, Map.of("success", true, "url", "https://example.com/"));
+
+        client.evadr().fetch("https://example.com/", FetchOptions.builder().includeResources(List.of()).build());
+        client.kolektr().extract("https://example.com/", ExtractOptions.builder().includeResources(List.of()).build());
+
+        assertEquals(List.of(), routes.bodies.get("POST evadr/fetch").get("include_resources"));
+        assertEquals(List.of(), routes.bodies.get("POST kolektr/extract").get("include_resources"));
+    }
+
     // ── continue ─────────────────────────────────────────────────────────────
 
     @Test
