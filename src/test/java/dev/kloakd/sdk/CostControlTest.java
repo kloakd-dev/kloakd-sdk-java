@@ -3,6 +3,7 @@ package dev.kloakd.sdk;
 import dev.kloakd.sdk.errors.ApiException;
 import dev.kloakd.sdk.errors.ConcurrencyLimitException;
 import dev.kloakd.sdk.errors.CostAcknowledgementRequiredException;
+import dev.kloakd.sdk.errors.ForbiddenException;
 import dev.kloakd.sdk.models.*;
 import dev.kloakd.sdk.modules.WebgrphNamespace;
 import okhttp3.mockwebserver.MockResponse;
@@ -305,37 +306,109 @@ class CostControlTest {
 
     // ── artifacts ────────────────────────────────────────────────────────────
 
+    private static final String ART = "3f2b8c1e-9d4a-4e7b-8a61-2c5d0f9e7b13";
+
     @Test
     void getArtifact_readsTheMetadata() {
-        routes.json("GET artifacts/a%2F1", 200, Map.of("id", "a/1", "type", "fetched_content",
-                "url", "https://example.com/", "created_at", "2026-11-15T01:00:00Z", "size_bytes", 5_000_000_000L,
-                "content_type", "text/html"));
+        var body = new HashMap<String, Object>();
+        body.put("id", ART);
+        body.put("type", "FETCHED_CONTENT");
+        body.put("url", "https://example.com/");
+        body.put("created_at", "2026-11-15T01:00:00Z");
+        body.put("size_bytes", 5_000_000_000L);
+        body.put("content_type", "text/html");
+        body.put("final_url", "https://www.example.com/");
+        body.put("status_code", 200);
+        body.put("verified", true);
+        body.put("content_url", "/api/v1/organizations/org/artifacts/" + ART + "/content");
+        routes.json("GET artifacts/" + ART, 200, body);
 
-        var a = client.getArtifact("a/1");
+        var a = client.getArtifact(ART);
 
+        assertEquals(List.of("GET artifacts/" + ART), routes.seen);
+        assertEquals(new Artifact(ART, Artifact.FETCHED_CONTENT, "https://example.com/", "2026-11-15T01:00:00Z",
+                5_000_000_000L, "text/html", "https://www.example.com/", 200, true,
+                "/api/v1/organizations/org/artifacts/" + ART + "/content"), a);
+    }
+
+    @Test
+    void getArtifact_degradedWithNullableFieldsNull() {
+        var body = new HashMap<String, Object>();
+        body.put("id", ART);
+        body.put("type", "DEGRADED_FETCHED_CONTENT");
+        body.put("url", "https://example.com/");
+        body.put("created_at", "2026-11-15T01:00:00Z");
+        body.put("size_bytes", 12);
+        body.put("content_type", "text/html");
+        body.put("final_url", null);
+        body.put("status_code", null);
+        body.put("verified", false);
+        body.put("content_url", "/c");
+        routes.json("GET artifacts/" + ART, 200, body);
+
+        var a = client.getArtifact(ART);
+
+        assertEquals(Artifact.DEGRADED_FETCHED_CONTENT, a.type());
+        assertNull(a.finalUrl());
+        assertNull(a.statusCode());
+        assertFalse(a.verified());
+        assertEquals(12L, a.sizeBytes());
+    }
+
+    @Test
+    void getArtifact_encodesTheId() {
+        routes.json("GET artifacts/a%2F1", 200, Map.of("id", "a/1"));
+        assertEquals("a/1", client.getArtifact("a/1").id());
         assertEquals(List.of("GET artifacts/a%2F1"), routes.seen);
-        assertEquals(new Artifact("a/1", "fetched_content", "https://example.com/", "2026-11-15T01:00:00Z",
-                5_000_000_000L, "text/html"), a);
     }
 
     @Test
     void downloadArtifact_returnsTheBytes() {
         var html = "<html><body>héllo</body></html>";
-        routes.add("GET artifacts/art-1/content", new MockResponse().setResponseCode(200)
-                .addHeader("Content-Type", "text/plain; charset=utf-8")
-                .addHeader("Content-Disposition", "attachment; filename=\"art-1.html\"")
+        routes.add("GET artifacts/" + ART + "/content", new MockResponse().setResponseCode(200)
+                .addHeader("Content-Type", "text/html; charset=utf-8")
+                .addHeader("Content-Disposition", "attachment; filename=\"example.com-3f2b8c1e.html\"")
                 .setBody(html));
 
-        var bytes = client.downloadArtifact("art-1");
+        var bytes = client.downloadArtifact(ART);
 
         assertArrayEquals(html.getBytes(StandardCharsets.UTF_8), bytes);
     }
 
     @Test
-    void artifact_unknownIsA404() {
-        var ex = assertThrows(ApiException.class, () -> client.getArtifact("nope"));
+    void artifact_notFoundIsA404() {
+        routes.json("GET artifacts/" + ART, 404, Map.of("detail", "Artifact not found"));
+        routes.json("GET artifacts/" + ART + "/content", 404, Map.of("detail", "Artifact not found"));
+
+        var ex = assertThrows(ApiException.class, () -> client.getArtifact(ART));
         assertEquals(404, ex.getStatusCode());
-        assertThrows(ApiException.class, () -> client.downloadArtifact("nope"));
+        assertTrue(ex.getMessage().contains("Artifact not found"), ex.getMessage());
+        var ex2 = assertThrows(ApiException.class, () -> client.downloadArtifact(ART));
+        assertEquals(404, ex2.getStatusCode());
+    }
+
+    @Test
+    void artifact_wrongOrgIsA403() {
+        routes.json("GET artifacts/" + ART, 403, Map.of("detail", "Forbidden"));
+        routes.json("GET artifacts/" + ART + "/content", 403, Map.of("detail", "Forbidden"));
+
+        assertEquals(403, assertThrows(ForbiddenException.class, () -> client.getArtifact(ART)).getStatusCode());
+        assertThrows(ForbiddenException.class, () -> client.downloadArtifact(ART));
+    }
+
+    @Test
+    void artifact_anIdThatIsNotAUuidIsA422() {
+        var invalid = Map.of("detail", List.of(Map.of("loc", List.of("path", "artifact_id"),
+                "msg", "Input should be a valid UUID", "type", "uuid_parsing")));
+        routes.json("GET artifacts/not-a-uuid", 422, invalid);
+        routes.json("GET artifacts/not-a-uuid/content", 422, invalid);
+
+        var ex = assertThrows(ApiException.class, () -> client.getArtifact("not-a-uuid"));
+        assertEquals(422, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("valid UUID"), ex.getMessage());
+        assertEquals(422, assertThrows(ApiException.class, () -> client.downloadArtifact("not-a-uuid")).getStatusCode());
+        assertEquals(1, routes.seen.stream().filter(k -> k.equals("GET artifacts/not-a-uuid")).count(),
+                "a 422 is not retried");
     }
 
     // ── 409 cost_acknowledgement_required ────────────────────────────────────

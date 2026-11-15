@@ -59,9 +59,13 @@ and 8); the backend is being built to it in parallel.
   `WebgrphNamespace.DATA_LIMIT` is the new `partial_reason` `data_limit`.
 - `webgrph().mapSite(url[, maxUrls])` (`POST webgrph/map`) returns a
   `SiteMap` with its `branches` tree (`SiteMap.Branch`).
-- `client.getArtifact(id)` (`GET artifacts/{artifact_id}`, `Artifact`) and
-  `client.downloadArtifact(id)` (`GET artifacts/{artifact_id}/content`, the
-  page's bytes).
+- `client.getArtifact(id)` (`GET artifacts/{artifact_id}`, `Artifact`:
+  `id`, `type` (`FETCHED_CONTENT` or `DEGRADED_FETCHED_CONTENT`), `url`,
+  `createdAt`, `sizeBytes`, `contentType`, `finalUrl`, `statusCode`,
+  `verified`, `contentUrl`) and `client.downloadArtifact(id)` (`GET
+  artifacts/{artifact_id}/content`, the page's HTML bytes). 404 `Artifact
+  not found`, 403 for the wrong organisation, 422 for an id that is not a
+  UUID.
 - `CostAcknowledgementRequiredException` (an `ApiException`) for 409
   `cost_acknowledgement_required`.
 

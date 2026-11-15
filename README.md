@@ -506,11 +506,19 @@ The batch export sends no `X-Job-Status` and no `X-Crawl-*` header:
 ### A fetch's stored page
 
 A fetch's page is kept as an artifact. `getArtifact(id)` (`GET
-artifacts/{artifact_id}`) returns its metadata (`id`, `type`, `url`,
-`createdAt`, `sizeBytes`, `contentType`); `downloadArtifact(id)` (`GET
-artifacts/{artifact_id}/content`) returns its HTML as bytes. Only fetched
-pages of your organisation are served (others answer 404). The HTML is the
-page as fetched: save it or read it, but do not open it as a live page.
+artifacts/{artifact_id}`) returns its metadata: `id`, `type`
+(`Artifact.FETCHED_CONTENT` or `Artifact.DEGRADED_FETCHED_CONTENT`), `url`,
+`createdAt`, `sizeBytes`, `contentType`, `finalUrl` (after redirects, or
+null), `statusCode` (or null), `verified` and `contentUrl`.
+`downloadArtifact(id)` (`GET artifacts/{artifact_id}/content`) returns its
+HTML as UTF-8 bytes; the API sends it as an attachment named
+`<host>-<id8>.html`. The HTML is the page as fetched: save it or read it,
+but do not open it as a live page.
+
+Both answer 404 `Artifact not found` (`ApiException`) for a session or
+cookie artifact, another organisation's artifact, an unknown id, or one with
+no HTML; 403 (`ForbiddenException`) for the wrong organisation; and 422
+(`ApiException`) for an id that is not a UUID.
 
 ```java
 Artifact a = client.getArtifact(artifactId);

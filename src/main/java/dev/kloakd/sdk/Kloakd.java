@@ -104,10 +104,15 @@ public final class Kloakd {
     /**
      * A stored page's metadata ({@code GET artifacts/{artifact_id}}; cost-control
      * contract of 15 Nov 2026, section 8). Only fetched-content artifacts of your
-     * organisation are served.
+     * organisation are served ({@code FETCHED_CONTENT} and {@code DEGRADED_FETCHED_CONTENT}).
      *
-     * @throws dev.kloakd.sdk.errors.ApiException 404: no such fetched page of yours (session and
-     *         cookie artifacts are never served)
+     * @param artifactId the artifact's id (a UUID)
+     * @return its metadata, including {@code finalUrl}, {@code statusCode}, {@code verified}
+     *         and {@code contentUrl}
+     * @throws dev.kloakd.sdk.errors.ApiException 404 {@code Artifact not found}: a session or
+     *         cookie artifact, another organisation's, an unknown id, or one with no HTML;
+     *         422: the id is not a UUID
+     * @throws dev.kloakd.sdk.errors.ForbiddenException 403: the key's organisation is not this one
      */
     public Artifact getArtifact(String artifactId) {
         return Artifact.from(transport.get("artifacts/" + HttpTransport.seg(artifactId), null));
@@ -115,10 +120,17 @@ public final class Kloakd {
 
     /**
      * A stored page's HTML as it was fetched ({@code GET artifacts/{artifact_id}/content},
-     * sent as a download). The bytes are the page's own: it is not run or
-     * sanitised, so do not open it as a live page in a browser.
+     * sent as a download: {@code Content-Type: text/html; charset=utf-8},
+     * {@code Content-Disposition: attachment; filename="<host>-<id8>.html"}). The
+     * bytes are the page's own: it is not run or sanitised, so do not open it as
+     * a live page in a browser.
      *
-     * @throws dev.kloakd.sdk.errors.ApiException 404: no such fetched page of yours
+     * @param artifactId the artifact's id (a UUID)
+     * @return the page's HTML, as UTF-8 bytes
+     * @throws dev.kloakd.sdk.errors.ApiException 404 {@code Artifact not found}: a session or
+     *         cookie artifact, another organisation's, an unknown id, or one with no HTML;
+     *         422: the id is not a UUID
+     * @throws dev.kloakd.sdk.errors.ForbiddenException 403: the key's organisation is not this one
      */
     public byte[] downloadArtifact(String artifactId) {
         return transport.requestBytes("GET", "artifacts/" + HttpTransport.seg(artifactId) + "/content", null, null);
