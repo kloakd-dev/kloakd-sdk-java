@@ -54,8 +54,12 @@ public final class WebgrphNamespace {
      * {@code estimateId}, {@code costAcknowledged}, {@code urls},
      * {@code includePaths}) are sent when set ({@code costAcknowledged} only when true).
      *
+     * {@code robotsAcknowledgedHosts} is sent when set: it lets the start page and every
+     * page of the crawl on those hosts past their robots.txt.
+     *
      * @throws dev.kloakd.sdk.errors.CostAcknowledgementRequiredException 409: a dashboard session
      *         started a job whose estimate requires consent without acknowledging it
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the start page's robots.txt stops it
      */
     public CrawlResult startCrawl(String url, CrawlOptions o) {
         var m = t.post("webgrph/crawl", crawlBody(url, o));
@@ -92,6 +96,7 @@ public final class WebgrphNamespace {
         if (o.budget() != null) body.put("budget", o.budget());
         if (o.captureMode() != null) body.put("capture_mode", o.captureMode());
         if (o.includeResources() != null) body.put("include_resources", o.includeResources());
+        HttpTransport.putAcknowledgedHosts(body, o.robotsAcknowledgedHosts());
         return body;
     }
 
@@ -311,9 +316,20 @@ public final class WebgrphNamespace {
      * @param maxUrls the most URLs to list, or null for the API's default
      */
     public SiteMap mapSite(String url, Integer maxUrls) {
+        return mapSite(url, maxUrls, null);
+    }
+
+    /**
+     * {@link #mapSite(String, Integer)} with the hosts whose robots.txt stop you acknowledge
+     * ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops it
+     */
+    public SiteMap mapSite(String url, Integer maxUrls, List<String> robotsAcknowledgedHosts) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (maxUrls != null) body.put("max_urls", maxUrls);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
         return SiteMap.from(t.post("webgrph/map", body));
     }
 
@@ -716,10 +732,22 @@ public final class WebgrphNamespace {
 
     /** Reader view of a page ({@code crawlId}, {@code sessionArtifactId} may be null). */
     public Map<String, Object> readerView(String url, String crawlId, String sessionArtifactId) {
+        return readerView(url, crawlId, sessionArtifactId, null);
+    }
+
+    /**
+     * {@link #readerView(String, String, String)} with the hosts whose robots.txt stop you
+     * acknowledge ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops it
+     */
+    public Map<String, Object> readerView(String url, String crawlId, String sessionArtifactId,
+                                          List<String> robotsAcknowledgedHosts) {
         var body = new HashMap<String, Object>();
         body.put("url", url);
         if (crawlId != null) body.put("crawl_id", crawlId);
         if (sessionArtifactId != null) body.put("session_artifact_id", sessionArtifactId);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
         return t.post("webgrph/reader-view", body);
     }
 

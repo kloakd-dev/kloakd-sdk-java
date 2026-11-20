@@ -190,6 +190,7 @@ public final class Kloakd {
             if (options.crawlId() != null) body.put("crawl_id", options.crawlId());
             if (options.entityType() != null) body.put("entity_type", options.entityType());
             if (options.fields() != null) body.put("fields", options.fields());
+            HttpTransport.putAcknowledgedHosts(body, options.robotsAcknowledgedHosts());
         }
         return parseBatchJob(transport.post("batch-jobs", body));
     }
@@ -341,6 +342,7 @@ public final class Kloakd {
             if (options.context() != null) body.put("context", options.context());
             if (options.constraints() != null) body.put("constraints", options.constraints());
             if (options.sessionArtifactId() != null) body.put("session_artifact_id", options.sessionArtifactId());
+            HttpTransport.putAcknowledgedHosts(body, options.robotsAcknowledgedHosts());
             if (options.pollInterval() != null) interval = options.pollInterval();
             if (options.pollTimeout() != null) limit = options.pollTimeout();
         }
@@ -530,7 +532,8 @@ public final class Kloakd {
         FetchResult fetchResult;
         try {
             fetchResult = evadr.fetch(pageUrl, FetchOptions.builder()
-                    .sessionArtifactId(opts != null ? opts.sessionArtifactId() : null).build());
+                    .sessionArtifactId(opts != null ? opts.sessionArtifactId() : null)
+                    .robotsAcknowledgedHosts(opts != null ? opts.robotsAcknowledgedHosts() : null).build());
         } catch (RuntimeException e) {
             if (isFatal(e)) throw e;
             return new CrawlPage(false, pageUrl, 0, 0, null, null, null, e.getMessage());
@@ -539,7 +542,8 @@ public final class Kloakd {
         if (opts != null && opts.extractSchema() != null && !opts.extractSchema().isEmpty() && fetchResult.success()) {
             try {
                 var extraction = kolektr.extract(pageUrl, ExtractOptions.builder().schema(opts.extractSchema())
-                        .fetchArtifactId(fetchResult.artifactId()).build());
+                        .fetchArtifactId(fetchResult.artifactId())
+                        .robotsAcknowledgedHosts(opts.robotsAcknowledgedHosts()).build());
                 if (!extraction.records().isEmpty()) {
                     structuredData = extraction.records().get(0);
                 }

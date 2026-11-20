@@ -64,6 +64,7 @@ public final class KolektrNamespace {
         if (o.apiMapArtifactId() != null) body.put("api_map_artifact_id", o.apiMapArtifactId());
         if (o.pipelineId() != null) body.put("pipeline_id", o.pipelineId());
         if (o.includeResources() != null) body.put("include_resources", o.includeResources());
+        HttpTransport.putAcknowledgedHosts(body, o.robotsAcknowledgedHosts());
         return parseExtractionResult(t.postFollowing("kolektr/extract", body));
     }
 
@@ -199,9 +200,33 @@ public final class KolektrNamespace {
 
     /** Start a job extracting every record of an API ({@code endpointHash}, {@code maxRecords} may be null). */
     public Map<String, Object> extractAllApiData(String apiEndpoint, String endpointHash, Integer maxRecords) {
+        return extractAllApiData(apiEndpoint, endpointHash, maxRecords, null);
+    }
+
+    /**
+     * {@link #extractAllApiData(String, String, Integer)} with the hosts whose robots.txt
+     * stop you acknowledge: sent as the query parameter {@code robots_acknowledged_hosts},
+     * once per host (null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the API's robots.txt stops it
+     */
+    public Map<String, Object> extractAllApiData(String apiEndpoint, String endpointHash, Integer maxRecords,
+                                                 List<String> robotsAcknowledgedHosts) {
         var p = params("endpoint_hash", endpointHash);
         if (maxRecords != null) p.put("max_records", String.valueOf(maxRecords));
-        return t.request("POST", "kolektr/api-data/" + seg(apiEndpoint) + "/extract-all", Map.of(), p);
+        String path = "kolektr/api-data/" + seg(apiEndpoint) + "/extract-all";
+        if (robotsAcknowledgedHosts == null || robotsAcknowledgedHosts.isEmpty()) {
+            return t.request("POST", path, Map.of(), p);
+        }
+        // A repeated query parameter: written into the path, with the others.
+        var q = new StringJoiner("&");
+        p.forEach((k, v) -> q.add(enc(k) + "=" + enc(v)));
+        for (String host : robotsAcknowledgedHosts) q.add(enc(HttpTransport.ROBOTS_ACKNOWLEDGED_HOSTS) + "=" + enc(host));
+        return t.request("POST", path + "?" + q, Map.of(), null);
+    }
+
+    private static String enc(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     // ── Content ──────────────────────────────────────────────────────────────

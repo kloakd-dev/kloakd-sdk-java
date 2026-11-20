@@ -1,5 +1,6 @@
 package dev.kloakd.sdk.models;
 
+import java.util.List;
 import java.time.Duration;
 import java.util.Map;
 
@@ -17,6 +18,12 @@ import java.util.Map;
  * @param sessionArtifactId a login session's id
  * @param pollInterval      first wait before polling a handed-off request, or null for the client's
  * @param pollTimeout       limit on following a handed-off request, or null for the client's
+ * @param robotsAcknowledgedHosts hosts whose robots.txt stop you acknowledge for this request
+ *                         ({@code robots_acknowledged_hosts}): the {@code host} of a
+ *                         {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Naming a host
+ *                         confirms you have the right to access its content despite its robots.txt
+ *                         and accept responsibility under the Terms; KLOAKD records it. This request
+ *                         and these hosts only (at most 50 bare host names). Null or empty is not sent
  */
 public record UnifiedScrapeOptions(
         String prompt,
@@ -27,8 +34,16 @@ public record UnifiedScrapeOptions(
         Map<String, Object> constraints,
         String sessionArtifactId,
         Duration pollInterval,
-        Duration pollTimeout
+        Duration pollTimeout,
+        List<String> robotsAcknowledgedHosts
 ) {
+    /** The constructor before robots.txt acknowledgements. */
+    public UnifiedScrapeOptions(String prompt, String mode, Map<String, String> schema, Map<String, Object> options,
+            Map<String, Object> context, Map<String, Object> constraints, String sessionArtifactId,
+            Duration pollInterval, Duration pollTimeout) {
+        this(prompt, mode, schema, options, context, constraints, sessionArtifactId, pollInterval, pollTimeout, null);
+    }
+
     public static Builder builder() { return new Builder(); }
 
     public static final class Builder {
@@ -41,6 +56,7 @@ public record UnifiedScrapeOptions(
         private String sessionArtifactId;
         private Duration pollInterval;
         private Duration pollTimeout;
+        private List<String> robotsAcknowledgedHosts;
 
         private Builder() {}
 
@@ -54,9 +70,18 @@ public record UnifiedScrapeOptions(
         public Builder pollInterval(Duration pollInterval) { this.pollInterval = pollInterval; return this; }
         public Builder pollTimeout(Duration pollTimeout) { this.pollTimeout = pollTimeout; return this; }
 
+        /**
+         * Hosts whose robots.txt stop you acknowledge for this request ({@code robots_acknowledged_hosts}):
+         * the {@code getHost()} of a {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Recorded by
+         * KLOAKD; applies to this request and these hosts only. Null or empty is not sent.
+         */
+        public Builder robotsAcknowledgedHosts(List<String> hosts) { this.robotsAcknowledgedHosts = hosts == null ? null : List.copyOf(hosts); return this; }
+        /** {@link #robotsAcknowledgedHosts(List)} with these hosts. */
+        public Builder robotsAcknowledgedHosts(String... hosts) { return robotsAcknowledgedHosts(List.of(hosts)); }
+
         public UnifiedScrapeOptions build() {
             return new UnifiedScrapeOptions(prompt, mode, schema, options, context, constraints,
-                    sessionArtifactId, pollInterval, pollTimeout);
+                    sessionArtifactId, pollInterval, pollTimeout, robotsAcknowledgedHosts);
         }
     }
 }

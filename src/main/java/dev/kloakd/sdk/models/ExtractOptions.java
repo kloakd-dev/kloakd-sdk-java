@@ -22,6 +22,12 @@ import java.util.Map;
  * @param includeResources the page extras the extraction's browser loads ({@code include_resources};
  *                         {@link ResourceTypes}): page extras are off by default on every browser
  *                         route, and null (unset) means none
+ * @param robotsAcknowledgedHosts hosts whose robots.txt stop you acknowledge for this request
+ *                         ({@code robots_acknowledged_hosts}): the {@code host} of a
+ *                         {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Naming a host
+ *                         confirms you have the right to access its content despite its robots.txt
+ *                         and accept responsibility under the Terms; KLOAKD records it. This request
+ *                         and these hosts only (at most 50 bare host names). Null or empty is not sent
  */
 public record ExtractOptions(
         Map<String, ?> schema,
@@ -32,20 +38,29 @@ public record ExtractOptions(
         String apiMapArtifactId,
         String pipelineId,
         String itemSelector,
-        List<String> includeResources
+        List<String> includeResources,
+        List<String> robotsAcknowledgedHosts
 ) {
+    /** The constructor before robots.txt acknowledgements. */
+    public ExtractOptions(Map<String, ?> schema, String level, Map<String, Object> options,
+            String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId, String pipelineId,
+            String itemSelector, List<String> includeResources) {
+        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, itemSelector,
+                includeResources, null);
+    }
+
     /** The 0.6.0 constructor (no page extras). */
     public ExtractOptions(Map<String, ?> schema, String level, Map<String, Object> options,
             String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId, String pipelineId,
             String itemSelector) {
         this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, itemSelector,
-                null);
+                null, null);
     }
 
     /** The 0.5.0 constructor (no item selector). */
     public ExtractOptions(Map<String, ?> schema, String level, Map<String, Object> options,
             String fetchArtifactId, String sessionArtifactId, String apiMapArtifactId, String pipelineId) {
-        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, null, null);
+        this(schema, level, options, fetchArtifactId, sessionArtifactId, apiMapArtifactId, pipelineId, null, null, null);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -60,6 +75,7 @@ public record ExtractOptions(
         private String pipelineId;
         private String itemSelector;
         private List<String> includeResources;
+        private List<String> robotsAcknowledgedHosts;
 
         private Builder() {}
 
@@ -78,9 +94,18 @@ public record ExtractOptions(
         /** The page extras to load ({@link ResourceTypes}). */
         public Builder includeResources(String... includeResources) { return includeResources(List.of(includeResources)); }
 
+        /**
+         * Hosts whose robots.txt stop you acknowledge for this request ({@code robots_acknowledged_hosts}):
+         * the {@code getHost()} of a {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Recorded by
+         * KLOAKD; applies to this request and these hosts only. Null or empty is not sent.
+         */
+        public Builder robotsAcknowledgedHosts(List<String> hosts) { this.robotsAcknowledgedHosts = hosts == null ? null : List.copyOf(hosts); return this; }
+        /** {@link #robotsAcknowledgedHosts(List)} with these hosts. */
+        public Builder robotsAcknowledgedHosts(String... hosts) { return robotsAcknowledgedHosts(List.of(hosts)); }
+
         public ExtractOptions build() {
             return new ExtractOptions(schema, level, options, fetchArtifactId, sessionArtifactId,
-                    apiMapArtifactId, pipelineId, itemSelector, includeResources);
+                    apiMapArtifactId, pipelineId, itemSelector, includeResources, robotsAcknowledgedHosts);
         }
     }
 }

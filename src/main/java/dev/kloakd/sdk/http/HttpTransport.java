@@ -38,7 +38,11 @@ import java.util.stream.StreamSupport;
  *       {@code reset_at}) is not retried: waiting does not clear it.</li>
  *   <li>503 {@code billing_unavailable}: retried on any method (the request
  *       was not started), after {@code Retry-After}.</li>
- *   <li>Never retried: 400, 401, 402, 403, 404, 409, 422 and 429 {@code gb_exhausted}.</li>
+ *   <li>503 {@code ROBOTS_CHECK_UNAVAILABLE}: retried on any method (nothing
+ *       was fetched), after {@code Retry-After}; except with reason
+ *       {@code exits_refused} (every exit refused the site), never retried.</li>
+ *   <li>Never retried: 400, 401, 402, 403, 404, 409 (including
+ *       {@code ROBOTS_DISALLOWED}), 422 and 429 {@code gb_exhausted}.</li>
  *   <li>Backoff without a server hint: 1 s × 2^attempt, at most 60 s.</li>
  * </ul>
  */
@@ -120,6 +124,17 @@ public class HttpTransport {
     public static String seg(String value) {
         if (value == null) throw new IllegalArgumentException("a path parameter is null");
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /** The request field that acknowledges a robots.txt stop. */
+    public static final String ROBOTS_ACKNOWLEDGED_HOSTS = "robots_acknowledged_hosts";
+
+    /**
+     * Put {@code robots_acknowledged_hosts} in a request body when there are
+     * hosts; null or empty is not sent (no acknowledgement).
+     */
+    public static void putAcknowledgedHosts(Map<String, Object> body, List<String> hosts) {
+        if (hosts != null && !hosts.isEmpty()) body.put(ROBOTS_ACKNOWLEDGED_HOSTS, List.copyOf(hosts));
     }
 
     public String buildUrl(String path, Map<String, String> params) {
@@ -609,6 +624,11 @@ public class HttpTransport {
             // cost-control contract of 15 Nov 2026, section 4
             return new CostAcknowledgementRequiredException(msg);
         }
+        if (status == 409) {
+            // A robots.txt stop (kobe-scraper core/compliance/robots.py stop_detail)
+            RobotsDisallowedException stop = RobotsDisallowedException.fromDetail(detail, msg);
+            if (stop != null) return stop;
+        }
         if (status == 429 && "gb_exhausted".equals(code)) return new QuotaExceededException(msg, upgradeUrl,
                 dbl(detail, "residential_gb_used"), dbl(detail, "residential_gb_limit"),
                 dbl(detail, "purchased_gb_balance"), str(detail, "tier"));
@@ -625,6 +645,16 @@ public class HttpTransport {
         if (status == 503 && "billing_unavailable".equals(code)) {
             return new BillingUnavailableException(msg,
                     headerRetry > 0 ? headerRetry : intVal(detail, "retry_after", 30));
+        }
+        if (status == 503 && (RobotsCheckUnavailableException.CODE.equals(code)
+                || RobotsCheckUnavailableException.CODE.equals(str(detail, "code")))) {
+            // core/compliance/robots.py unavailable(): Retry-After, and retry_after_s in the body
+            int retry = headerRetry > 0 ? headerRetry : intVal(detail, "retry_after_s", 30);
+            String reason = str(detail, "reason");
+            if (RobotsExitsRefusedException.REASON.equals(reason)) {
+                return new RobotsExitsRefusedException(msg, str(detail, "host"), retry);
+            }
+            return new RobotsCheckUnavailableException(msg, reason, str(detail, "host"), retry);
         }
         if (status == 502) return new UpstreamException(msg);
         return new ApiException(status, msg, code);
@@ -644,6 +674,8 @@ public class HttpTransport {
     public static boolean isRetryable(String method, KloakdException ex) {
         if (ex instanceof RateLimitException rl) return !rl.isQuotaExhausted() && retryableRateLimitCode(rl.getCode());
         if (ex instanceof BillingUnavailableException) return true;
+        if (ex instanceof RobotsExitsRefusedException) return false;
+        if (ex instanceof RobotsCheckUnavailableException) return true;
         if (ex instanceof QuotaExceededException || ex instanceof PaymentRequiredException) return false;
         return SERVER_ERRORS.contains(ex.getStatusCode()) && IDEMPOTENT.contains(method);
     }

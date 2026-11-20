@@ -632,6 +632,65 @@ Options: `prompt`, `mode`, `schema`, `options`, `context`, `constraints`,
 for a request the API hands off (202), which is followed like every other
 long request.
 
+### robots.txt
+
+KLOAKD reads a site's robots.txt before it asks for a page, on every route
+that fetches a site. When the file disallows the page, or cannot be read (a
+5xx, a timeout, a dropped connection), the call stops with
+`RobotsDisallowedException` (HTTP 409 `ROBOTS_DISALLOWED`) and nothing is
+requested from the page. A missing robots.txt allows everything.
+
+To go past a stop, call again with the stopped host in
+`robotsAcknowledgedHosts` (sent as `robots_acknowledged_hosts`). By naming a
+host you confirm you have the right to access its content despite its
+robots.txt and accept responsibility for doing so under the Terms; KLOAKD
+records each acknowledgement (who, the organisation, the host, the reason
+shown and the terms version, `e.getTermsVersion()`). It counts for that
+request and those hosts only: nothing is remembered, so every call that
+should go past names the host again. At most 50 bare host names
+(`www.example.com`, not a URL). The SDK never acknowledges on its own and
+does not retry the 409.
+
+```java
+var url = "https://www.reddit.com/r/Python/";
+try {
+    var page = client.evadr().fetch(url);
+} catch (RobotsDisallowedException e) {
+    // e.getReason(): "disallowed" (a rule forbids the page) or "unreadable"
+    System.out.println(e.getHost() + " stops this: " + e.getRule() + " (" + e.getReason() + ")");
+    // Only if you have the right to access it despite robots.txt:
+    var page = client.evadr().fetch(url,
+            FetchOptions.builder().robotsAcknowledgedHosts(e.getHost()).build());
+}
+```
+
+Where to name the host:
+
+| Call | How |
+|---|---|
+| `evadr().fetch`, `startFetchJob`, `fetchAsync`, `fetchStream` | `FetchOptions.builder().robotsAcknowledgedHosts(...)` |
+| `evadr().scan`, `evadr().profile` | `scan(url, hosts)`, `profile(url, hosts)` |
+| `kolektr().extract` | `ExtractOptions.builder().robotsAcknowledgedHosts(...)` |
+| `kolektr().extractAllApiData` | `extractAllApiData(endpoint, hash, maxRecords, hosts)` (a query parameter, once per host) |
+| `webgrph().startCrawl`, `crawl`, `crawlStream`, `estimateCrawl`, `startCrawlExtract`, `crawlExtract`, `estimateCrawlExtract`, `client.crawl`, `client.crawlStream` | `CrawlOptions.builder().robotsAcknowledgedHosts(...)` (a crawl also lets its pages on those hosts past robots.txt; `client.crawl` sends them with each page's fetch and extract too) |
+| `webgrph().continueCrawl`, `continueCrawlExtract` | `CrawlContinueOptions.builder().robotsAcknowledgedHosts(...)` |
+| `webgrph().mapSite`, `webgrph().readerView` | `mapSite(url, maxUrls, hosts)`, `readerView(url, crawlId, sessionArtifactId, hosts)` |
+| `skanyr().sync` | `sync(siteId, urls, policy, hosts)` |
+| `parlyr().chat`, `chatStream` | `chat(sessionId, message, hosts)`; a stopped turn ends with an `error` event whose data is the stop: `RobotsDisallowedException.fromDetail(event.data(), null)` reads it |
+| `client.unifiedScrape` | `UnifiedScrapeOptions.builder().robotsAcknowledgedHosts(...)` |
+| `client.createBatchJob` | `BatchJobOptions.builder().robotsAcknowledgedHosts(...)` (each item is checked; a stopped item fails, the batch does not answer 409) |
+
+Two answers are not a stop and have nothing to acknowledge:
+
+- `RobotsCheckUnavailableException` (HTTP 503 `ROBOTS_CHECK_UNAVAILABLE`):
+  KLOAKD could not read robots.txt because of a failure of its own. Retried
+  by the SDK on any method after `Retry-After`, like `billing_unavailable`;
+  `getRetryAfter()` and `getHost()` when it is still thrown.
+- `RobotsExitsRefusedException` (a subclass; the same 503 with reason
+  `exits_refused`): every one of KLOAKD's exits refused to connect to the
+  site, so nothing was read or fetched. Not retried; acknowledging the host
+  does not help.
+
 ### Login sessions
 
 A login session lets later requests run as a logged-in account
@@ -714,6 +773,11 @@ Every request sends `User-Agent: kloakd-sdk-java/0.7.0`.
   `RateLimitException.isQuotaExhausted()` is true and it carries
   `getQuotaUsed()`, `getQuotaLimit()` and `getUpgradeUrl()`.
 - 503 `billing_unavailable` is retried on any method (nothing was started).
+- 503 `ROBOTS_CHECK_UNAVAILABLE` is retried on any method after `Retry-After`
+  (nothing was fetched), except with reason `exits_refused`
+  (`RobotsExitsRefusedException`), which is never retried.
+- 409 `ROBOTS_DISALLOWED` is never retried: name the host in
+  `robotsAcknowledgedHosts` to go past it ([robots.txt](#robotstxt)).
 - 409 `concurrent_limit` is never retried. Every metered call holds one of
   the organisation's work slots while it runs, and running or queued crawls
   and batches hold one each; the plan sets how many run at once (Free 2,
@@ -749,6 +813,14 @@ try {
     // 409 concurrent_limit — all the organisation's work slots are in use (not retried)
     System.out.println(e.getTier() + " runs " + e.getConcurrentLimit() + " at once: "
             + e.getActiveCrawls() + " crawl(s)/batch(es), " + e.getActiveRequests() + " other call(s)");
+} catch (RobotsDisallowedException e) {
+    // 409 ROBOTS_DISALLOWED — the site's robots.txt stops it (not retried); to go past,
+    // call again with robotsAcknowledgedHosts(e.getHost()) (see robots.txt above)
+    System.out.println(e.getHost() + ": " + e.getReason() + " " + e.getRule());
+} catch (RobotsExitsRefusedException e) {
+    // 503 ROBOTS_CHECK_UNAVAILABLE, reason exits_refused — every exit refused the site (not retried)
+} catch (RobotsCheckUnavailableException e) {
+    // 503 ROBOTS_CHECK_UNAVAILABLE — robots.txt could not be read on our side; retry after e.getRetryAfter()
 } catch (CostAcknowledgementRequiredException e) {
     // 409 cost_acknowledgement_required — a dashboard session started a job whose estimate
     // requires consent; estimate again and start with CrawlOptions.builder().acknowledge(estimate)

@@ -35,6 +35,16 @@ public final class ParlyrNamespace {
      * and make {@link ChatTurn#ok()} false.
      */
     public ChatTurn chat(String sessionId, String message) {
+        return chat(sessionId, message, null);
+    }
+
+    /**
+     * {@link #chat(String, String)} with the hosts whose robots.txt stop you acknowledge for
+     * this turn ({@code robots_acknowledged_hosts}; null or empty is not sent). A turn that
+     * robots.txt stops ends with an {@code error} event whose data is the stop:
+     * {@link dev.kloakd.sdk.errors.RobotsDisallowedException#fromDetail} reads it.
+     */
+    public ChatTurn chat(String sessionId, String message, List<String> robotsAcknowledgedHosts) {
         var events = new ArrayList<ChatEvent>();
         var warnings = new ArrayList<ChatEvent>();
         var errors = new ArrayList<ChatEvent>();
@@ -43,7 +53,7 @@ public final class ParlyrNamespace {
         Map<String, Object> interpretation = null;
         Map<String, Object> results = null;
         List<Map<String, Object>> actions = List.of();
-        try (var stream = chatStream(sessionId, message)) {
+        try (var stream = chatStream(sessionId, message, robotsAcknowledgedHosts)) {
             for (var it = stream.iterator(); it.hasNext(); ) {
                 var e = it.next();
                 events.add(e);
@@ -75,9 +85,18 @@ public final class ParlyrNamespace {
      * (try-with-resources) to stop early.
      */
     public Stream<ChatEvent> chatStream(String sessionId, String message) {
+        return chatStream(sessionId, message, null);
+    }
+
+    /**
+     * {@link #chatStream(String, String)} with the hosts whose robots.txt stop you acknowledge
+     * for this turn ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     */
+    public Stream<ChatEvent> chatStream(String sessionId, String message, List<String> robotsAcknowledgedHosts) {
         var body = new HashMap<String, Object>();
         body.put("session_id", sessionId);
         body.put("message", message);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
         return t.streamEvents("parlyr/chat", body)
                 .takeWhile(e -> !"end".equals(e.event()))
                 .map(e -> parseChatEvent(e.event(), t.parseBody(e.data())));
