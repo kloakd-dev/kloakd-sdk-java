@@ -51,6 +51,8 @@ public final class EvadrNamespace {
      *
      * @throws dev.kloakd.sdk.errors.JobFailedException  the job failed or expired
      * @throws dev.kloakd.sdk.errors.JobTimeoutException still running after {@code pollTimeout}
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops it;
+     *         call again with {@code robotsAcknowledgedHosts(e.getHost())} to acknowledge
      */
     public FetchResult fetch(String url, FetchOptions opts) {
         var body = fetchBody(url, opts);
@@ -68,6 +70,7 @@ public final class EvadrNamespace {
         if (o.useProxy()) body.put("use_proxy", true);
         if (o.sessionArtifactId() != null) body.put("session_artifact_id", o.sessionArtifactId());
         if (o.includeResources() != null) body.put("include_resources", o.includeResources());
+        HttpTransport.putAcknowledgedHosts(body, o.robotsAcknowledgedHosts());
         return body;
     }
 
@@ -148,12 +151,38 @@ public final class EvadrNamespace {
 
     /** Fetch a URL once (plain HTTP) and report its anti-bot infrastructure. */
     public Map<String, Object> scan(String url) {
-        return t.post("evadr/scan", Map.of("url", url));
+        return scan(url, null);
+    }
+
+    /**
+     * {@link #scan(String)} with the hosts whose robots.txt stop you acknowledge
+     * ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops it
+     */
+    public Map<String, Object> scan(String url, List<String> robotsAcknowledgedHosts) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
+        return t.post("evadr/scan", body);
     }
 
     /** Analyse a URL and return its canonical site profile. */
     public Map<String, Object> profile(String url) {
-        return t.post("evadr/profile", Map.of("url", url));
+        return profile(url, null);
+    }
+
+    /**
+     * {@link #profile(String)} with the hosts whose robots.txt stop you acknowledge
+     * ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops it
+     */
+    public Map<String, Object> profile(String url, List<String> robotsAcknowledgedHosts) {
+        var body = new HashMap<String, Object>();
+        body.put("url", url);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
+        return t.post("evadr/profile", body);
     }
 
     // ── Job polling ──────────────────────────────────────────────────────────

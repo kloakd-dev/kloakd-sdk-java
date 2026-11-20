@@ -18,6 +18,12 @@ import java.util.List;
  *                         route, and null (unset) means none. Sent by {@code fetch}
  *                         ({@code POST evadr/fetch}) and by {@code startFetchJob}, {@code fetchAsync}
  *                         and {@code fetchStream} ({@code POST evadr/fetch/async})
+ * @param robotsAcknowledgedHosts hosts whose robots.txt stop you acknowledge for this request
+ *                         ({@code robots_acknowledged_hosts}): the {@code host} of a
+ *                         {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Naming a host
+ *                         confirms you have the right to access its content despite its robots.txt
+ *                         and accept responsibility under the Terms; KLOAKD records it. This request
+ *                         and these hosts only (at most 50 bare host names). Null or empty is not sent
  */
 public record FetchOptions(
         boolean forceBrowser,
@@ -26,12 +32,19 @@ public record FetchOptions(
         String webhookUrl,
         Duration pollInterval,
         Duration pollTimeout,
-        List<String> includeResources
+        List<String> includeResources,
+        List<String> robotsAcknowledgedHosts
 ) {
+    /** The constructor before robots.txt acknowledgements. */
+    public FetchOptions(boolean forceBrowser, boolean useProxy, String sessionArtifactId, String webhookUrl,
+            Duration pollInterval, Duration pollTimeout, List<String> includeResources) {
+        this(forceBrowser, useProxy, sessionArtifactId, webhookUrl, pollInterval, pollTimeout, includeResources, null);
+    }
+
     /** The 0.7.0 constructor (no page extras). */
     public FetchOptions(boolean forceBrowser, boolean useProxy, String sessionArtifactId, String webhookUrl,
             Duration pollInterval, Duration pollTimeout) {
-        this(forceBrowser, useProxy, sessionArtifactId, webhookUrl, pollInterval, pollTimeout, null);
+        this(forceBrowser, useProxy, sessionArtifactId, webhookUrl, pollInterval, pollTimeout, null, null);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -44,6 +57,7 @@ public record FetchOptions(
         private Duration pollInterval;
         private Duration pollTimeout;
         private List<String> includeResources;
+        private List<String> robotsAcknowledgedHosts;
 
         private Builder() {}
 
@@ -59,9 +73,18 @@ public record FetchOptions(
         /** The page extras to load ({@link ResourceTypes}). */
         public Builder includeResources(String... includeResources) { return includeResources(List.of(includeResources)); }
 
+        /**
+         * Hosts whose robots.txt stop you acknowledge for this request ({@code robots_acknowledged_hosts}):
+         * the {@code getHost()} of a {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Recorded by
+         * KLOAKD; applies to this request and these hosts only. Null or empty is not sent.
+         */
+        public Builder robotsAcknowledgedHosts(List<String> hosts) { this.robotsAcknowledgedHosts = hosts == null ? null : List.copyOf(hosts); return this; }
+        /** {@link #robotsAcknowledgedHosts(List)} with these hosts. */
+        public Builder robotsAcknowledgedHosts(String... hosts) { return robotsAcknowledgedHosts(List.of(hosts)); }
+
         public FetchOptions build() {
             return new FetchOptions(forceBrowser, useProxy, sessionArtifactId, webhookUrl, pollInterval, pollTimeout,
-                    includeResources);
+                    includeResources, robotsAcknowledgedHosts);
         }
     }
 }

@@ -58,10 +58,22 @@ public final class SkanyrNamespace {
 
     /** Re-fetch a site's changed resources ({@code urls} and {@code policy} may be null). */
     public Map<String, Object> sync(String siteId, List<String> urls, String policy) {
+        return sync(siteId, urls, policy, null);
+    }
+
+    /**
+     * {@link #sync(String, List, String)} with the hosts whose robots.txt stop you acknowledge
+     * ({@code robots_acknowledged_hosts}; null or empty is not sent).
+     *
+     * @throws dev.kloakd.sdk.errors.RobotsDisallowedException 409: the site's robots.txt stops its seed page
+     */
+    public Map<String, Object> sync(String siteId, List<String> urls, String policy,
+                                    List<String> robotsAcknowledgedHosts) {
         var body = new HashMap<String, Object>();
         body.put("site_id", siteId);
         if (urls != null && !urls.isEmpty()) body.put("urls", urls);
         if (policy != null) body.put("policy", policy);
+        HttpTransport.putAcknowledgedHosts(body, robotsAcknowledgedHosts);
         return t.post("skanyr/sync", body);
     }
 

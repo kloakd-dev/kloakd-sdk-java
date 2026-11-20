@@ -1,5 +1,34 @@
 # Routes called by the Java SDK
 
+## Unreleased: robots.txt acknowledgement
+
+Against kobe-scraper `core/compliance/robots.py` (`ACK_FIELD =
+"robots_acknowledged_hosts"`, `RobotsAcknowledgementField`, at most 50 hosts)
+and the routes whose request models take it. No route is added; these calls
+also send `robots_acknowledged_hosts` (a list of bare hosts) when it is set,
+and read 409 `ROBOTS_DISALLOWED` (`RobotsDisallowedException`) and 503
+`ROBOTS_CHECK_UNAVAILABLE` (`RobotsCheckUnavailableException`; reason
+`exits_refused`: `RobotsExitsRefusedException`).
+
+| Call | Java method | Notes |
+|---|---|---|
+| `POST evadr/fetch` | `evadr().fetch` | `FetchOptions.robotsAcknowledgedHosts` |
+| `POST evadr/fetch/async` | `startFetchJob`, `fetchAsync`, `fetchStream` | same |
+| `POST evadr/scan`, `POST evadr/profile` | `scan(url, hosts)`, `profile(url, hosts)` | |
+| `POST kolektr/extract` | `kolektr().extract` | `ExtractOptions.robotsAcknowledgedHosts`; not `extract/html` (it fetches nothing) |
+| `POST kolektr/api-data/{api_endpoint}/extract-all` | `extractAllApiData(endpoint, hash, maxRecords, hosts)` | a query parameter, repeated once per host |
+| `POST webgrph/crawl`, `webgrph/crawl/estimate`, `webgrph/crawl-extract`, `webgrph/crawl-extract/estimate` | `startCrawl`, `crawl`, `crawlStream`, `estimateCrawl`, `startCrawlExtract`, `crawlExtract`, `estimateCrawlExtract`; `client.crawl`, `client.crawlStream` | `CrawlOptions.robotsAcknowledgedHosts` |
+| `POST webgrph/crawl/{id}/continue`, `webgrph/crawl-extract/{job_id}/continue` | `continueCrawl`, `continueCrawlExtract` | `CrawlContinueOptions.robotsAcknowledgedHosts`; hosts alone make a body |
+| `POST webgrph/map`, `POST webgrph/reader-view` | `mapSite(url, maxUrls, hosts)`, `readerView(url, crawlId, sessionArtifactId, hosts)` | |
+| `POST skanyr/sync` | `sync(siteId, urls, policy, hosts)` | |
+| `POST parlyr/chat` | `chat(sessionId, message, hosts)`, `chatStream(...)` | a stop is an `error` event in the stream, not a 409 |
+| `POST scraping/unified` | `client.unifiedScrape` | `UnifiedScrapeOptions.robotsAcknowledgedHosts` |
+| `POST batch-jobs` | `client.createBatchJob` | `BatchJobOptions.robotsAcknowledgedHosts` |
+
+Not called by this SDK, though they take the field: `analysis/complexity`,
+`analysis/site-profile`, `analysis/page-structure`, `analysis/element-preview`,
+`analysis/validate-selectors` and `batch/url-import`.
+
 ## Unreleased: cost control
 
 Against the cost-control contract of 15 November 2026

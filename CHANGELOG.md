@@ -7,6 +7,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added: robots.txt acknowledgement (GAP-DOC-35)
+
+Against kobe-scraper `core/compliance/robots.py` (`RobotsAcknowledgementField`,
+`stop_detail`, `unavailable`).
+
+- `robotsAcknowledgedHosts` (sent as `robots_acknowledged_hosts`, only when
+  non-empty) on `FetchOptions`, `ExtractOptions`, `CrawlOptions`,
+  `CrawlContinueOptions`, `UnifiedScrapeOptions` and `BatchJobOptions`, and as
+  a last argument in new overloads of `evadr().scan`, `evadr().profile`,
+  `kolektr().extractAllApiData` (a repeated query parameter),
+  `webgrph().mapSite`, `webgrph().readerView`, `skanyr().sync`,
+  `parlyr().chat` and `parlyr().chatStream`. `client.crawl` sends the crawl's
+  hosts with each page's fetch and extract. A continue with only hosts set
+  sends a body with them alone.
+- `RobotsDisallowedException` (409 `ROBOTS_DISALLOWED`; extends
+  `ApiException`): `getReason()`, `getHost()`, `getRule()`, `getUrl()`,
+  `getRedirectedFrom()`, `getTermsVersion()`, `getAcknowledgeField()`,
+  `isUnreadable()`, and `fromDetail(map, message)` for a chat `error` event.
+  Not retried; the SDK never acknowledges on its own.
+- `RobotsCheckUnavailableException` (503 `ROBOTS_CHECK_UNAVAILABLE`; extends
+  `ApiException`): `getReason()`, `getHost()`, `getRetryAfter()`. Retried on
+  any method after `Retry-After`, as `billing_unavailable` is.
+- `RobotsExitsRefusedException` (the same 503 with reason `exits_refused`;
+  extends `RobotsCheckUnavailableException`): not retried.
+
+### Changed
+- `FetchOptions`, `ExtractOptions`, `CrawlOptions`, `CrawlContinueOptions`,
+  `UnifiedScrapeOptions` and `BatchJobOptions` have a new last record
+  component `robotsAcknowledgedHosts`; the previous canonical constructors are
+  kept. These answers were `ApiException` before and are now its subclasses.
+
 Written against the crawl-estimate API contract of 14 November 2026
 (sections 1–4); the backend routes are being built to it in parallel.
 

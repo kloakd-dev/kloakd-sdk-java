@@ -31,6 +31,12 @@ import java.util.Map;
  *             links are not followed), for example chosen from {@code webgrph().mapSite}; null is not sent
  * @param includePaths follow only links under these path prefixes (the start page is always fetched),
  *                     for example branches of {@code webgrph().mapSite}; null is not sent
+ * @param robotsAcknowledgedHosts hosts whose robots.txt stop you acknowledge for this request
+ *                         ({@code robots_acknowledged_hosts}): the {@code host} of a
+ *                         {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Naming a host
+ *                         confirms you have the right to access its content despite its robots.txt
+ *                         and accept responsibility under the Terms; KLOAKD records it. This request
+ *                         and these hosts only (at most 50 bare host names). Null or empty is not sent
  */
 public record CrawlOptions(
         int maxDepth,
@@ -46,13 +52,23 @@ public record CrawlOptions(
         String estimateId,
         boolean costAcknowledged,
         List<String> urls,
-        List<String> includePaths
+        List<String> includePaths,
+        List<String> robotsAcknowledgedHosts
 ) {
+    /** The cost-control constructor (before robots.txt acknowledgements). */
+    public CrawlOptions(int maxDepth, int maxPages, Map<String, ?> extractSchema, boolean includeExternalLinks,
+            String sessionArtifactId, Map<String, Object> scope, Map<String, Object> budget, String captureMode,
+            List<String> includeResources, Double maxDataMb, String estimateId, boolean costAcknowledged,
+            List<String> urls, List<String> includePaths) {
+        this(maxDepth, maxPages, extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode,
+                includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths, null);
+    }
+
     /** The 0.7.0 components only (none of the cost-control fields). */
     public CrawlOptions(int maxDepth, int maxPages, Map<String, ?> extractSchema, boolean includeExternalLinks,
             String sessionArtifactId, Map<String, Object> scope, Map<String, Object> budget, String captureMode) {
         this(maxDepth, maxPages, extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode,
-                null, null, null, false, null, null);
+                null, null, null, false, null, null, null);
     }
 
     public static Builder builder() { return new Builder(); }
@@ -72,6 +88,7 @@ public record CrawlOptions(
         private boolean costAcknowledged;
         private List<String> urls;
         private List<String> includePaths;
+        private List<String> robotsAcknowledgedHosts;
 
         private Builder() {}
 
@@ -100,17 +117,28 @@ public record CrawlOptions(
         public Builder includePaths(List<String> includePaths) { this.includePaths = includePaths == null ? null : List.copyOf(includePaths); return this; }
 
         /** Options with the orchestrator's defaults (depth 3, 100 pages) for unset limits. */
+        /**
+         * Hosts whose robots.txt stop you acknowledge for this request ({@code robots_acknowledged_hosts}):
+         * the {@code getHost()} of a {@link dev.kloakd.sdk.errors.RobotsDisallowedException}. Recorded by
+         * KLOAKD; applies to this request and these hosts only. Null or empty is not sent.
+         */
+        public Builder robotsAcknowledgedHosts(List<String> hosts) { this.robotsAcknowledgedHosts = hosts == null ? null : List.copyOf(hosts); return this; }
+        /** {@link #robotsAcknowledgedHosts(List)} with these hosts. */
+        public Builder robotsAcknowledgedHosts(String... hosts) { return robotsAcknowledgedHosts(List.of(hosts)); }
+
         public CrawlOptions build() {
             return new CrawlOptions(maxDepth > 0 ? maxDepth : 3, maxPages > 0 ? maxPages : 100,
                     extractSchema, includeExternalLinks, sessionArtifactId, scope, budget, captureMode,
-                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths);
+                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths,
+                    robotsAcknowledgedHosts);
         }
 
         /** Options as set: unset limits stay 0 and are not sent, so the API applies the tier's defaults. */
         public CrawlOptions buildAsSet() {
             return new CrawlOptions(maxDepth, maxPages, extractSchema, includeExternalLinks,
                     sessionArtifactId, scope, budget, captureMode,
-                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths);
+                    includeResources, maxDataMb, estimateId, costAcknowledged, urls, includePaths,
+                    robotsAcknowledgedHosts);
         }
     }
 }
